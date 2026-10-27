@@ -1,0 +1,23 @@
+server:
+  port: ${SERVER_PORT:8081}
+
+spring:
+  application:
+    name: firmbanking-mock
+  config:
+    # docker-compose.yml과 같은 .env를 읽는다. 없으면(CI·테스트) 무시되고 아래 기본값이 쓰인다.
+    import: optional:file:.env[.properties]
+  profiles:
+    default: local
+  datasource:
+    url: jdbc:mysql://localhost:${MYSQL_PORT:3307}/${MYSQL_DATABASE:firmbanking}?connectionTimeZone=Asia/Seoul&characterEncoding=UTF-8
+    username: ${MYSQL_USER:firmbanking}
+    password: ${MYSQL_PASSWORD:}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+mybatis:
+  mapper-locations: classpath:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
