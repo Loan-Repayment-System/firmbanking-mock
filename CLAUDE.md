@@ -62,6 +62,7 @@ src/main/resources/mapper/{도메인}/{대상}Mapper.xml
 - 코드성 테이블 enum은 여러 기능이 함께 쓰므로 도메인이 아니라 `global/code/`에 모은다.
 - `domain`은 `telegram`을 참조하지 않는다. 전문 객체는 `message/`에서 도메인 DTO로 바꿔 서비스에 넘긴다.
 - 서비스는 인터페이스 없이 클래스 하나로 만든다.
+- 다른 도메인의 매퍼는 조회만 직접 호출할 수 있다.
 
 ---
 

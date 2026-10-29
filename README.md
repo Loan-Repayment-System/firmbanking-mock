@@ -18,5 +18,5 @@ repayment-backend ──(전문)──▶ firmbanking-mock (계좌 DB 포함)
 ```bash
 cp .env.sample .env
 docker compose up -d      # 로컬 MySQL (3307)
-./gradlew bootRun         # http://localhost:8081
+./gradlew bootRun         # 전문 TCP 9001
 ```
