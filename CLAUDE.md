@@ -94,7 +94,7 @@ src/main/resources/mapper/{도메인}/{대상}Mapper.xml
 
 ## 5. 응답코드
 
-- 전문 처리 결과는 응답코드 하나로 나간다. `global/code/ResponseCode`가 관리하고, 값은 전문 명세 5절을 따른다.
+- 전문 처리 결과는 응답코드 하나로 나간다. `global/code/ResponseCode`가 관리한다.
 - 업무 거절(B·C·D 계열)은 서비스 반환값으로 돌려준다. 이체 거절도 transfer에 남겨야 하기 때문이다.
 
 ---
@@ -163,16 +163,7 @@ src/main/resources/mapper/{도메인}/{대상}Mapper.xml
 
 ---
 
-## 12. 전문
-
-규격·응답코드는 노션 「전문 명세」, 처리 흐름은 「프로그램 설계」, 테이블은 「ERD」가 원본이다(§14). 규격을 바꿀 때는 노션부터 고친다.
-
-- 형식 오류(A 계열)는 기록하지 않는다. 지급·집금은 정상과 업무 거절(B·C) 모두 transfer에 한 행씩 남긴다.
-- 지급·집금은 계좌 확인부터 이체 결과 저장까지 한 트랜잭션이다.
-
----
-
-## 13. 테스트
+## 12. 테스트
 
 - 서비스와 계산 로직은 단위 테스트로 검증한다. DB 없이 Mockito나 순수 JUnit을 쓴다.
 - 매퍼, Flyway는 통합 테스트로 검증한다. `@SpringBootTest` + `@Import(TestcontainersConfig.class)` + `@ActiveProfiles("test")`를 쓴다.
@@ -211,19 +202,15 @@ src/main/resources/mapper/{도메인}/{대상}Mapper.xml
 
 ---
 
-## 14. 참고 자료
+## 13. 참고 자료
 
 - 펌뱅킹 개요: https://developers.hectofinancial.co.kr/docs/firm-banking/00-overview
 - 펌뱅킹 전문 API: https://developers.hectofinancial.co.kr/docs/api/firm-banking
 - 캐피탈 서버: https://github.com/Loan-Repayment-System/repayment-backend
-- 설계 문서(노션, notion-corebanking MCP로 읽는다)
-  - 전문 명세: `407932195cf781e5ae49d69e68b5847e`
-  - 프로그램 설계: `407932195cf781f0894ec878c7f28c30`
-  - ERD: `407932195cf781d9a17cfc406d63e146`
 
 ---
 
-## 15. Git / GitHub 워크플로우
+## 14. Git / GitHub 워크플로우
 
 ### 브랜치 · 커밋
 
