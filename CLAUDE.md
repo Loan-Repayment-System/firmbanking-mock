@@ -9,12 +9,12 @@
 ```bash
 cp .env.sample .env
 docker compose up -d      # 로컬 MySQL (빈 DB. 스키마는 앱이 뜰 때 Flyway가 넣는다 — §11)
-./gradlew bootRun         # http://localhost:8081, 기본 프로필 local
+./gradlew bootRun         # 전문 TCP 9001, 기본 프로필 local
 ./gradlew build           # 컴파일 + 테스트 + jar 패키징 — Docker 필요(Testcontainers)
 ./gradlew test            # 테스트만
 ```
 
-`repayment-backend`와 함께 띄우므로 포트를 겹치지 않게 둔다(MySQL 3307, 앱 8081).
+`repayment-backend`와 함께 띄우므로 포트를 겹치지 않게 둔다(MySQL 3307, 전문 9001).
 
 ---
 
@@ -28,6 +28,7 @@ docker compose up -d      # 로컬 MySQL (빈 DB. 스키마는 앱이 뜰 때 Fl
 | 영속성 | MyBatis (스타터 3.0.5) |
 | DB | MySQL 8.4 |
 | 마이그레이션 | Flyway |
+| 전문 통신 | TCP 소켓(java.net) + 스레드 풀 |
 | 테스트 | JUnit 5, AssertJ, Mockito, Testcontainers(MySQL) |
 
 ---
@@ -38,20 +39,20 @@ docker compose up -d      # 로컬 MySQL (빈 DB. 스키마는 앱이 뜰 때 Fl
 ```
 com.firmbanking
 ├─ FirmbankingApplication
-├─ api/                             # HTTP API
-│  └─ {도메인}/
-│     └─ {대상}Controller
+├─ telegram/                        # 전문 수신(TCP). 업무 로직은 두지 않는다
+│  ├─ TelegramServer                # 포트를 열고 연결마다 TelegramHandler를 스레드 풀에 넘긴다
+│  ├─ TelegramHandler               # 연결 하나: 읽기 → 디스패치 → 쓰기 → 닫기
+│  ├─ TelegramDispatcher            # 거래 선택(A002), 업체 확인(A003), 예상 못한 예외 → 9999
+│  ├─ codec/                        # 바이트 ↔ 전문. EUC-KR, N/AN, 형식 오류(A001)
+│  └─ message/                      # 거래별 개별부 ↔ 도메인 DTO
 ├─ domain/
-│  └─ {도메인}/
+│  └─ {도메인}/                       # transfer, consent, account
 │     ├─ service/
 │     ├─ mapper/                    # MyBatis 인터페이스
-│     ├─ dto/{request,response}/
-│     └─ exception/                 # 구체 예외 클래스 (§6)
+│     └─ dto/{request,response}/
 └─ global/
-   ├─ code/                         # ErrorCode enum, 코드성 테이블 enum
+   ├─ code/                         # ResponseCode, 코드성 테이블 enum
    ├─ config/
-   ├─ dto/                          # ApiResponse
-   ├─ exception/                    # BusinessException, 범주 예외, GlobalExceptionHandler
    └─ util/
 
 src/main/resources/mapper/{도메인}/{대상}Mapper.xml
@@ -59,9 +60,8 @@ src/main/resources/mapper/{도메인}/{대상}Mapper.xml
 
 - 도메인은 업무 기능 단위로 나누고, 구현하면서 정한다. 테이블 단위로 나누지 않는다.
 - 코드성 테이블 enum은 여러 기능이 함께 쓰므로 도메인이 아니라 `global/code/`에 모은다.
-- `domain`은 `api`를 참조하지 않는다.
+- `domain`은 `telegram`을 참조하지 않는다. 전문 객체는 `message/`에서 도메인 DTO로 바꿔 서비스에 넘긴다.
 - 서비스는 인터페이스 없이 클래스 하나로 만든다.
-- 전문 수신(TCP) 패키지 위치는 전문 통신을 구현할 때 정한다.
 
 ---
 
@@ -70,63 +70,39 @@ src/main/resources/mapper/{도메인}/{대상}Mapper.xml
 | 대상 | 규칙 | 예 |
 |---|---|---|
 | 패키지 | 소문자·단수 | `com.firmbanking.domain.account` |
-| 컨트롤러 / 서비스 | `{대상}Controller` / `{대상}Service` | `AccountController`, `TransferService` |
+| 서비스 | `{대상}Service` | `TransferService` |
+| 거래별 전문 변환 | `{거래}Message` | `NameInquiryMessage` |
 | 매퍼 인터페이스 / XML | `{대상}Mapper` / `resources/mapper/{도메인}/{대상}Mapper.xml` | `mapper/account/AccountMapper.xml` |
 | 요청 DTO | `{동작}{대상}Request` | `CreateAccountRequest` |
 | 응답 DTO | `{대상}{용도}Response` | `AccountDetailResponse` |
-| 조회 조건 | `{대상}SearchCondition` | `TransactionSearchCondition` |
-| 에러 코드 | 전역 단일 enum `ErrorCode`의 상수 | `ErrorCode.ACCOUNT_NOT_FOUND` |
-| 범주 예외 | `{범주}Exception` | `NotFoundException` |
-| 구체 예외 | `{맥락}Exception` — 이름이 맥락과 1:1 | `AccountNotFoundException` |
+| 응답코드 | 전역 단일 enum `ResponseCode`의 상수. 이름은 영어, 코드 값은 필드 | `ResponseCode.INSUFFICIENT_BALANCE("B003")` |
 | 매퍼 메서드 | 조회 `find*`/`count*`/`exists*`, 변경 `insert*`/`update*`/`delete*` | `findByAccountNo` |
-| enum 상수 | 영어 대문자. 코드성 테이블의 **id**와 1:1 (§8) | `TransactionType.WITHDRAWAL` |
+| enum 상수 | 영어 대문자. 코드성 테이블의 **id**와 1:1 (§8) | `TransferType.PAYMENT` |
 | DB → 필드 | `snake_case` → `camelCase` | `account_balance` → `accountBalance` |
 | 마이그레이션 | `V{버전}__{설명}.sql` | `V1__create_account.sql` |
 | 테스트 클래스 | `{대상}Test` / `{대상}IntegrationTest` | `TransferServiceTest` |
-| 테스트 메서드 | 한글 + 언더스코어 | `잔액이_부족하면_예외를_던진다()` |
+| 테스트 메서드 | 한글 + 언더스코어 | `잔액이_부족하면_B003으로_응답한다()` |
 
 ---
 
 ## 4. DTO 규칙
 
-- Request·Response는 class + Lombok으로 만든다. `@Setter`는 쓰지 않는다.
-  - Request: `@Getter @NoArgsConstructor`
-  - Response: `@Getter @NoArgsConstructor @AllArgsConstructor @Builder`
+- Request·Response는 class + Lombok `@Getter @NoArgsConstructor @AllArgsConstructor @Builder`로 만든다. `@Setter`는 쓰지 않는다.
 - entity는 만들지 않는다. 매퍼는 Request DTO를 그대로 받고, Response DTO로 바로 반환한다.
 
 ---
 
-## 5. 응답 포맷
+## 5. 응답코드
 
-`/api` 아래 모든 응답은 `global/dto/ApiResponse<T>`로 감싸서 보낸다. 전문 응답은 여기에 해당하지 않는다(§12).
-
-- 성공은 `ApiResponse.ok(data)`다. `code`·`message` 없이 `{ success, data }`만 나간다.
-- 실패는 `{ success, code, message, data }`다. `data`는 기본 `null`이고, 부가 데이터가 필요할 때만 예외에 담아 채운다.
-- 검증 실패일 때만 `errors: [{ field, reason }]`가 붙는다.
-
-실패 응답의 `code`·`message`·상태코드는 예외 클래스가 아니라 `global/code/ErrorCode` enum 하나가 관리한다.
-
-- `code`는 enum 상수 이름을 그대로 쓴다.
-- 주석으로 구역을 나눈다. 맨 위는 공통이고, 그 아래는 도메인 패키지와 같은 단위다.
-- `message`는 사용자에게 그대로 보일 문구로 적는다.
+- 전문 처리 결과는 응답코드 하나로 나간다. `global/code/ResponseCode`가 관리하고, 값은 전문 명세 5절을 따른다.
+- 업무 거절(B·C·D 계열)은 서비스 반환값으로 돌려준다. 이체 거절도 transfer에 남겨야 하기 때문이다.
 
 ---
 
 ## 6. 예외 처리
 
-예외 클래스는 3단이다.
-
-| 단 | 위치 | 역할 |
-|---|---|---|
-| `BusinessException` | `global/exception/` | 최상위 abstract 클래스. `ErrorCode`를 들고 있다 |
-| `{범주}Exception` | `global/exception/` | 여러 예외를 한 타입으로 잡는 단위 |
-| `{맥락}Exception` | `domain/{도메인}/exception/` | 실제로 던지는 예외 |
-
-- 범주는 미리 만들지 않는다. 여러 예외를 한 타입으로 잡아야 할 때 추가한다.
-- 던질 때는 구체 예외만 쓴다.
-- 금액, 계좌번호처럼 원인 추적에 필요한 값은 생성자로 받는다.
-- 실패 응답의 `data`에 담을 값은 `BusinessException(ErrorCode, Object data)`로 넘긴다. 기술 예외를 감쌀 때는 `(ErrorCode, Throwable cause)`를 쓴다.
-- 컨트롤러는 예외를 잡지 않는다. `GlobalExceptionHandler`가 잡아서 응답으로 바꾼다.
+- 예외는 전문 형식 오류 하나다. codec이 `InvalidTelegramException`을 던지면 디스패처가 A001로 바꾼다.
+- 그 밖의 예외는 디스패처가 9999로 바꾸고 스택트레이스를 남긴다. 업무 거절에는 예외를 쓰지 않는다.
 
 ---
 
@@ -157,8 +133,8 @@ src/main/resources/mapper/{도메인}/{대상}Mapper.xml
 - 금액은 `BigDecimal`로 다룬다. `double`, `float`는 쓰지 않는다.
 - `BigDecimal`은 `equals` 대신 `compareTo`로 비교한다.
 - `created_at`, `updated_at`은 DB가 채우므로 INSERT, UPDATE 문에 적지 않는다.
-- 잔액을 바꿀 때는 그 근거 기록(거래내역)의 INSERT와 한 트랜잭션으로 묶는다.
-- 거래내역 같은 기록 테이블은 지우지도 고치지도 않는다.
+- 잔액을 바꿀 때는 그 근거 기록(이체 결과)의 INSERT와 한 트랜잭션으로 묶는다.
+- 이체 결과 같은 기록 테이블은 지우지도 고치지도 않는다.
 - 코드성 테이블의 id는 enum과 1:1이다. 이미 적용된 마이그레이션의 id를 바꾸지 않고, 코드를 추가할 때는 새 마이그레이션과 enum을 함께 추가한다.
 
 ---
@@ -189,7 +165,10 @@ src/main/resources/mapper/{도메인}/{대상}Mapper.xml
 
 ## 12. 전문
 
-전문 통신을 구현할 때 채운다. (지원 거래, 전문 규격, 통신 방식, 응답코드)
+규격·응답코드는 노션 「전문 명세」, 처리 흐름은 「프로그램 설계」, 테이블은 「ERD」가 원본이다(§14). 규격을 바꿀 때는 노션부터 고친다.
+
+- 형식 오류(A 계열)는 기록하지 않는다. 지급·집금은 정상과 업무 거절(B·C) 모두 transfer에 한 행씩 남긴다.
+- 지급·집금은 계좌 확인부터 이체 결과 저장까지 한 트랜잭션이다.
 
 ---
 
@@ -197,7 +176,7 @@ src/main/resources/mapper/{도메인}/{대상}Mapper.xml
 
 - 서비스와 계산 로직은 단위 테스트로 검증한다. DB 없이 Mockito나 순수 JUnit을 쓴다.
 - 매퍼, Flyway는 통합 테스트로 검증한다. `@SpringBootTest` + `@Import(TestcontainersConfig.class)` + `@ActiveProfiles("test")`를 쓴다.
-- 컨트롤러 테스트는 선택이다. 쓸 때는 MockMvc `standaloneSetup`을 쓴다.
+- 전문 송수신은 통합 테스트에서 실제 소켓으로 전문을 보내 검증한다.
 - 단언은 AssertJ로 쓴다. 금액은 `isEqualByComparingTo`로 비교한다.
 - 통합 테스트가 컨테이너 기동에서 실패하면 Docker Desktop이 켜져 있는지부터 확인한다.
 - 데이터를 바꾸는 통합 테스트는 `@Transactional`로 롤백한다.
@@ -237,6 +216,10 @@ src/main/resources/mapper/{도메인}/{대상}Mapper.xml
 - 펌뱅킹 개요: https://developers.hectofinancial.co.kr/docs/firm-banking/00-overview
 - 펌뱅킹 전문 API: https://developers.hectofinancial.co.kr/docs/api/firm-banking
 - 캐피탈 서버: https://github.com/Loan-Repayment-System/repayment-backend
+- 설계 문서(노션, notion-corebanking MCP로 읽는다)
+  - 전문 명세: `407932195cf781e5ae49d69e68b5847e`
+  - 프로그램 설계: `407932195cf781f0894ec878c7f28c30`
+  - ERD: `407932195cf781d9a17cfc406d63e146`
 
 ---
 
