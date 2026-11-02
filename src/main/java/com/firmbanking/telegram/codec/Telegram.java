@@ -36,10 +36,10 @@ public class Telegram {
             DateTimeFormatter.ofPattern("HHmmss").withResolverStyle(ResolverStyle.STRICT);
 
     // 요청 전문구분코드 → 응답 전문구분코드. 여기 없는 값은 응답에서도 그대로 둔다.
-    private static final Map<String, String> RESPONSE_TELEGRAM_TYPE_CODES = Map.of(
-            "2000", "2100",
-            "6000", "6100",
-            "7000", "7100");
+    private static final Map<String, Long> RESPONSE_TELEGRAM_TYPE_CODES = Map.of(
+            "2000", 2100L,
+            "6000", 6100L,
+            "7000", 7100L);
 
     private final byte[] bytes;
 
@@ -59,9 +59,9 @@ public class Telegram {
      */
     public Telegram toResponse(ResponseCode responseCode) {
         Telegram response = new Telegram(bytes);
-        String responseTelegramTypeCode = RESPONSE_TELEGRAM_TYPE_CODES.get(readAscii(CommonField.TELEGRAM_TYPE_CODE));
+        Long responseTelegramTypeCode = RESPONSE_TELEGRAM_TYPE_CODES.get(readAscii(CommonField.TELEGRAM_TYPE_CODE));
         if (responseTelegramTypeCode != null) {
-            response.writeAN(CommonField.TELEGRAM_TYPE_CODE, responseTelegramTypeCode);
+            response.writeN(CommonField.TELEGRAM_TYPE_CODE, responseTelegramTypeCode);
         }
         response.writeAN(CommonField.RESPONSE_CODE, responseCode.getCode());
         return response;
