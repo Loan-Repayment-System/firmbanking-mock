@@ -2,8 +2,8 @@ package com.firmbanking.telegram;
 
 import com.firmbanking.global.code.ResponseCode;
 import com.firmbanking.telegram.codec.CommonField;
-import com.firmbanking.telegram.codec.FieldEncoder;
 import com.firmbanking.telegram.codec.InvalidTelegramException;
+import com.firmbanking.telegram.codec.ResponseTelegram;
 import com.firmbanking.telegram.codec.TelegramField;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -131,7 +131,7 @@ class TelegramDispatcherTest {
             // then
             assertThat(read(response, CommonField.TELEGRAM_TYPE_CODE)).isEqualTo("2100");
             assertThat(read(response, CommonField.RESPONSE_CODE)).isEqualTo("A001");
-            then(transaction).should(never()).process(any(), any(), any());
+            then(transaction).should(never()).process(any(), any());
         }
 
         // 전문 명세 2절: 전문구분코드가 2000·6000·7000이 아니면 그대로 둔다
@@ -208,15 +208,15 @@ class TelegramDispatcherTest {
 
     private void willWriteAndReturn(ResponseCode responseCode) {
         willAnswer(invocation -> {
-            FieldEncoder.writeAN(invocation.getArgument(2), RESULT_FIELD, "DONE");
+            invocation.<ResponseTelegram>getArgument(1).writeAN(RESULT_FIELD, "DONE");
             return responseCode;
-        }).given(transaction).process(any(), any(), any());
+        }).given(transaction).process(any(), any());
     }
 
     private void willWriteAndThrow(RuntimeException exception) {
         willAnswer(invocation -> {
-            FieldEncoder.writeAN(invocation.getArgument(2), RESULT_FIELD, "DONE");
+            invocation.<ResponseTelegram>getArgument(1).writeAN(RESULT_FIELD, "DONE");
             throw exception;
-        }).given(transaction).process(any(), any(), any());
+        }).given(transaction).process(any(), any());
     }
 }
