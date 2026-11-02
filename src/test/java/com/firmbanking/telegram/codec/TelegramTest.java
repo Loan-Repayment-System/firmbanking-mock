@@ -1,6 +1,5 @@
 package com.firmbanking.telegram.codec;
 
-import com.firmbanking.global.code.ResponseCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -302,81 +301,6 @@ class TelegramTest {
             byte[] result = telegram.toBytes();
             assertThat(Arrays.copyOfRange(result, 0, 100)).isEqualTo(Arrays.copyOfRange(original, 0, 100));
             assertThat(Arrays.copyOfRange(result, 106, 300)).isEqualTo(Arrays.copyOfRange(original, 106, 300));
-        }
-    }
-
-    @Nested
-    @DisplayName("응답을 만들 때")
-    class ToResponse {
-
-        // 전문 명세 2절: 요청을 복사하고 전문구분코드와 응답코드를 바꾼다
-        @ParameterizedTest(name = "[{0} → {1}]")
-        @CsvSource({"2000, 2100", "6000, 6100", "7000, 7100"})
-        @DisplayName("요청 전문구분이 2000·6000·7000이면 2100·6100·7100으로 바꾸고 응답코드 0000을 채운다")
-        void 전문구분을_응답으로_바꾼다(String requestType, String responseType) {
-            // given
-            byte[] bytes = request();
-            put(bytes, CommonField.TELEGRAM_TYPE_CODE, requestType);
-            Telegram telegram = new Telegram(bytes);
-
-            // when
-            Telegram response = telegram.toResponse(ResponseCode.SUCCESS);
-
-            // then
-            assertThat(read(response, CommonField.TELEGRAM_TYPE_CODE)).isEqualTo(responseType);
-            assertThat(read(response, CommonField.RESPONSE_CODE)).isEqualTo("0000");
-        }
-
-        @Test
-        @DisplayName("A001 응답은 전문구분코드와 응답코드를 뺀 292바이트가 요청과 같다")
-        void 나머지는_요청과_같다() {
-            // given
-            byte[] bytes = request();
-            put(bytes, new TelegramField(100, 15), "100-000-000002");
-            Telegram telegram = new Telegram(bytes);
-
-            // when
-            Telegram response = telegram.toResponse(ResponseCode.INVALID_FORMAT);
-
-            // then
-            byte[] result = response.toBytes();
-            assertThat(read(response, CommonField.RESPONSE_CODE)).isEqualTo("A001");
-            assertThat(Arrays.copyOfRange(result, 0, 24)).isEqualTo(Arrays.copyOfRange(bytes, 0, 24));
-            assertThat(Arrays.copyOfRange(result, 28, 52)).isEqualTo(Arrays.copyOfRange(bytes, 28, 52));
-            assertThat(Arrays.copyOfRange(result, 56, 300)).isEqualTo(Arrays.copyOfRange(bytes, 56, 300));
-        }
-
-        // 전문 명세 2절: 2000·6000·7000이 아니면 그대로 둔다
-        @ParameterizedTest(name = "[{0}]")
-        @ValueSource(strings = {"3000", "ABCD", "2100"})
-        @DisplayName("요청 전문구분이 3000·ABCD·2100이면 그대로 두고 응답코드 A002만 채운다")
-        void 모르는_전문구분은_그대로_둔다(String requestType) {
-            // given
-            byte[] bytes = request();
-            put(bytes, CommonField.TELEGRAM_TYPE_CODE, requestType);
-            Telegram telegram = new Telegram(bytes);
-
-            // when
-            Telegram response = telegram.toResponse(ResponseCode.UNSUPPORTED_TELEGRAM);
-
-            // then
-            assertThat(read(response, CommonField.TELEGRAM_TYPE_CODE)).isEqualTo(requestType);
-            assertThat(read(response, CommonField.RESPONSE_CODE)).isEqualTo("A002");
-        }
-
-        @Test
-        @DisplayName("응답에 값을 써도 요청 원문은 바뀌지 않는다")
-        void 요청은_바뀌지_않는다() {
-            // given
-            byte[] bytes = request();
-            Telegram telegram = new Telegram(bytes);
-            Telegram response = telegram.toResponse(ResponseCode.SUCCESS);
-
-            // when
-            response.writeAN(FIELD_12, "김철수");
-
-            // then
-            assertThat(telegram.toBytes()).isEqualTo(bytes);
         }
     }
 }

@@ -1,7 +1,5 @@
 package com.firmbanking.telegram.codec;
 
-import com.firmbanking.global.code.ResponseCode;
-
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -15,7 +13,6 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
 import java.util.Arrays;
-import java.util.Map;
 
 /**
  * 전문 본문 300바이트. 필드는 offset·길이로 읽고 쓴다.
@@ -35,12 +32,6 @@ public class Telegram {
     private static final DateTimeFormatter TIME_FORMAT =
             DateTimeFormatter.ofPattern("HHmmss").withResolverStyle(ResolverStyle.STRICT);
 
-    // 요청 전문구분코드 → 응답 전문구분코드. 여기 없는 값은 응답에서도 그대로 둔다.
-    private static final Map<String, Long> RESPONSE_TELEGRAM_TYPE_CODES = Map.of(
-            "2000", 2100L,
-            "6000", 6100L,
-            "7000", 7100L);
-
     private final byte[] bytes;
 
     public Telegram(byte[] bytes) {
@@ -52,19 +43,6 @@ public class Telegram {
 
     public byte[] toBytes() {
         return bytes.clone();
-    }
-
-    /**
-     * 요청을 복사해 전문구분코드를 응답 코드로 바꾸고 응답코드를 채운다. 요청은 바뀌지 않는다.
-     */
-    public Telegram toResponse(ResponseCode responseCode) {
-        Telegram response = new Telegram(bytes);
-        Long responseTelegramTypeCode = RESPONSE_TELEGRAM_TYPE_CODES.get(readAscii(CommonField.TELEGRAM_TYPE_CODE));
-        if (responseTelegramTypeCode != null) {
-            response.writeN(CommonField.TELEGRAM_TYPE_CODE, responseTelegramTypeCode);
-        }
-        response.writeAN(CommonField.RESPONSE_CODE, responseCode.getCode());
-        return response;
     }
 
     public String readN(TelegramField field) {
