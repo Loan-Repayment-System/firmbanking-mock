@@ -10,17 +10,15 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.Arrays;
 
 import static com.firmbanking.telegram.codec.TelegramFixture.blank;
 import static com.firmbanking.telegram.codec.TelegramFixture.put;
-import static com.firmbanking.telegram.codec.TelegramFixture.read;
 import static com.firmbanking.telegram.codec.TelegramFixture.with;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@DisplayName("FieldConverter")
-class FieldConverterTest {
+@DisplayName("FieldDecoder")
+class FieldDecoderTest {
 
     private static final TelegramField FIELD_6 = new TelegramField(100, 6);
     private static final TelegramField FIELD_8 = new TelegramField(100, 8);
@@ -38,7 +36,7 @@ class FieldConverterTest {
             byte[] bytes = with(FIELD_6, "000123");
 
             // when
-            String result = FieldConverter.readN(bytes, FIELD_6);
+            String result = FieldDecoder.readN(bytes, FIELD_6);
 
             // then
             assertThat(result).isEqualTo("000123");
@@ -51,7 +49,7 @@ class FieldConverterTest {
             byte[] bytes = with(FIELD_13, "0000000010000");
 
             // when
-            BigDecimal result = FieldConverter.readAmount(bytes, FIELD_13);
+            BigDecimal result = FieldDecoder.readAmount(bytes, FIELD_13);
 
             // then
             assertThat(result).isEqualByComparingTo("10000");
@@ -66,7 +64,7 @@ class FieldConverterTest {
             byte[] bytes = with(FIELD_6, value);
 
             // when, then
-            assertThatThrownBy(() -> FieldConverter.readN(bytes, FIELD_6))
+            assertThatThrownBy(() -> FieldDecoder.readN(bytes, FIELD_6))
                     .isInstanceOf(InvalidTelegramException.class);
         }
     }
@@ -82,7 +80,7 @@ class FieldConverterTest {
             byte[] bytes = with(FIELD_12, "김철수");
 
             // when
-            String result = FieldConverter.readAN(bytes, FIELD_12);
+            String result = FieldDecoder.readAN(bytes, FIELD_12);
 
             // then
             assertThat(result).isEqualTo("김철수");
@@ -95,7 +93,7 @@ class FieldConverterTest {
             byte[] bytes = blank();
 
             // when
-            String result = FieldConverter.readAN(bytes, FIELD_12);
+            String result = FieldDecoder.readAN(bytes, FIELD_12);
 
             // then
             assertThat(result).isEmpty();
@@ -110,7 +108,7 @@ class FieldConverterTest {
             put(bytes, FIELD_12, new byte[]{(byte) 0xFF, (byte) 0xFF});
 
             // when, then
-            assertThatThrownBy(() -> FieldConverter.readAN(bytes, FIELD_12))
+            assertThatThrownBy(() -> FieldDecoder.readAN(bytes, FIELD_12))
                     .isInstanceOf(InvalidTelegramException.class);
         }
     }
@@ -127,7 +125,7 @@ class FieldConverterTest {
             byte[] bytes = with(FIELD_8, value);
 
             // when
-            LocalDate result = FieldConverter.readDate(bytes, FIELD_8);
+            LocalDate result = FieldDecoder.readDate(bytes, FIELD_8);
 
             // then
             assertThat(result).isEqualTo(expected);
@@ -142,7 +140,7 @@ class FieldConverterTest {
             byte[] bytes = with(FIELD_8, value);
 
             // when, then
-            assertThatThrownBy(() -> FieldConverter.readDate(bytes, FIELD_8))
+            assertThatThrownBy(() -> FieldDecoder.readDate(bytes, FIELD_8))
                     .isInstanceOf(InvalidTelegramException.class);
         }
 
@@ -154,7 +152,7 @@ class FieldConverterTest {
             byte[] bytes = with(FIELD_6, value);
 
             // when
-            LocalTime result = FieldConverter.readTime(bytes, FIELD_6);
+            LocalTime result = FieldDecoder.readTime(bytes, FIELD_6);
 
             // then
             assertThat(result).isEqualTo(expected);
@@ -168,123 +166,8 @@ class FieldConverterTest {
             byte[] bytes = with(FIELD_6, value);
 
             // when, then
-            assertThatThrownBy(() -> FieldConverter.readTime(bytes, FIELD_6))
+            assertThatThrownBy(() -> FieldDecoder.readTime(bytes, FIELD_6))
                     .isInstanceOf(InvalidTelegramException.class);
-        }
-    }
-
-    @Nested
-    @DisplayName("N 필드를 쓸 때")
-    class WriteN {
-
-        @Test
-        @DisplayName("6자리 필드에 123을 쓰면 000123이 된다")
-        void 앞을_0으로_채운다() {
-            // given
-            byte[] bytes = blank();
-
-            // when
-            FieldConverter.writeN(bytes, FIELD_6, 123);
-
-            // then
-            assertThat(read(bytes, FIELD_6)).isEqualTo("000123");
-        }
-
-        @Test
-        @DisplayName("13자리 필드에 금액 10000을 쓰면 0000000010000이 된다")
-        void 금액을_쓴다() {
-            // given
-            byte[] bytes = blank();
-
-            // when
-            FieldConverter.writeAmount(bytes, FIELD_13, new BigDecimal("10000"));
-
-            // then
-            assertThat(read(bytes, FIELD_13)).isEqualTo("0000000010000");
-        }
-
-        @ParameterizedTest(name = "[{0}]")
-        @ValueSource(longs = {-1, 1234567})
-        @DisplayName("6자리 필드에 음수나 7자리 수를 쓰면 IllegalArgumentException을 던진다")
-        void 음수나_자릿수_초과면_예외를_던진다(long value) {
-            // given
-            byte[] bytes = blank();
-
-            // when, then
-            assertThatThrownBy(() -> FieldConverter.writeN(bytes, FIELD_6, value))
-                    .isInstanceOf(IllegalArgumentException.class);
-        }
-    }
-
-    @Nested
-    @DisplayName("AN 필드를 쓸 때")
-    class WriteAN {
-
-        @Test
-        @DisplayName("12바이트 필드에 김철수를 쓰면 김철수 뒤에 SPACE 6개가 붙는다")
-        void 남는_자리는_SPACE로_채운다() {
-            // given
-            byte[] bytes = blank();
-
-            // when
-            FieldConverter.writeAN(bytes, FIELD_12, "김철수");
-
-            // then
-            assertThat(read(bytes, FIELD_12)).isEqualTo("김철수      ");
-        }
-
-        // 전문 명세 4.5: 예금주명1은 한글 6자까지, 넘치면 자름
-        @Test
-        @DisplayName("12바이트 필드에 남궁가나다라마바를 쓰면 남궁가나다라까지 쓴다")
-        void 길이를_넘으면_자른다() {
-            // given
-            byte[] bytes = blank();
-
-            // when
-            FieldConverter.writeAN(bytes, FIELD_12, "남궁가나다라마바");
-
-            // then
-            assertThat(read(bytes, FIELD_12)).isEqualTo("남궁가나다라");
-        }
-
-        @Test
-        @DisplayName("12바이트 필드에 13바이트 A남궁가나다라를 쓰면 한글을 반만 쓰지 않고 A남궁가나다 뒤에 SPACE 1개를 붙인다")
-        void 글자_경계에서_자른다() {
-            // given
-            byte[] bytes = blank();
-
-            // when
-            FieldConverter.writeAN(bytes, FIELD_12, "A남궁가나다라");
-
-            // then
-            assertThat(read(bytes, FIELD_12)).isEqualTo("A남궁가나다 ");
-        }
-
-        @Test
-        @DisplayName("EUC-KR로 쓸 수 없는 이모지를 쓰면 IllegalArgumentException을 던진다")
-        void EUC_KR로_쓸_수_없으면_예외를_던진다() {
-            // given
-            byte[] bytes = blank();
-
-            // when, then
-            assertThatThrownBy(() -> FieldConverter.writeAN(bytes, FIELD_12, "김😀"))
-                    .isInstanceOf(IllegalArgumentException.class);
-        }
-
-        @Test
-        @DisplayName("필드 하나를 쓰면 그 필드 밖의 바이트는 바뀌지 않는다")
-        void 필드_밖은_바뀌지_않는다() {
-            // given
-            byte[] original = new byte[TelegramFixture.LENGTH];
-            Arrays.fill(original, (byte) 'X');
-            byte[] bytes = original.clone();
-
-            // when
-            FieldConverter.writeAN(bytes, FIELD_6, "AB");
-
-            // then
-            assertThat(Arrays.copyOfRange(bytes, 0, 100)).isEqualTo(Arrays.copyOfRange(original, 0, 100));
-            assertThat(Arrays.copyOfRange(bytes, 106, 300)).isEqualTo(Arrays.copyOfRange(original, 106, 300));
         }
     }
 }

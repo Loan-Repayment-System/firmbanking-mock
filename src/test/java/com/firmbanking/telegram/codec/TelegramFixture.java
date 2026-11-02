@@ -38,7 +38,7 @@ final class TelegramFixture {
      * value를 EUC-KR로 필드 앞에서부터 넣고 남는 자리는 SPACE로 둔다.
      */
     static void put(byte[] bytes, TelegramField field, String value) {
-        put(bytes, field, value.getBytes(FieldConverter.CHARSET));
+        put(bytes, field, value.getBytes(FieldDecoder.CHARSET));
     }
 
     static void put(byte[] bytes, TelegramField field, byte[] value) {
@@ -53,6 +53,6 @@ final class TelegramFixture {
     }
 
     static String read(byte[] bytes, TelegramField field) {
-        return new String(bytes, field.offset(), field.length(), FieldConverter.CHARSET);
+        return new String(bytes, field.offset(), field.length(), FieldDecoder.CHARSET);
     }
 }

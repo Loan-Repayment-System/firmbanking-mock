@@ -10,16 +10,16 @@ public final class CommonPartConverter {
 
     public static CommonPart read(byte[] bytes) {
         CommonPart commonPart = CommonPart.builder()
-                .companyNo(FieldConverter.readAN(bytes, CommonField.COMPANY_NO))
-                .bankCode(FieldConverter.readN(bytes, CommonField.BANK_CODE))
-                .telegramTypeCode(FieldConverter.readN(bytes, CommonField.TELEGRAM_TYPE_CODE))
-                .businessTypeCode(FieldConverter.readN(bytes, CommonField.BUSINESS_TYPE_CODE))
-                .telegramNo(FieldConverter.readN(bytes, CommonField.TELEGRAM_NO))
-                .sendDate(FieldConverter.readDate(bytes, CommonField.SEND_DATE))
-                .sendTime(FieldConverter.readTime(bytes, CommonField.SEND_TIME))
+                .companyNo(FieldDecoder.readAN(bytes, CommonField.COMPANY_NO))
+                .bankCode(FieldDecoder.readN(bytes, CommonField.BANK_CODE))
+                .telegramTypeCode(FieldDecoder.readN(bytes, CommonField.TELEGRAM_TYPE_CODE))
+                .businessTypeCode(FieldDecoder.readN(bytes, CommonField.BUSINESS_TYPE_CODE))
+                .telegramNo(FieldDecoder.readN(bytes, CommonField.TELEGRAM_NO))
+                .sendDate(FieldDecoder.readDate(bytes, CommonField.SEND_DATE))
+                .sendTime(FieldDecoder.readTime(bytes, CommonField.SEND_TIME))
                 .build();
         // 송신회수는 쓰지 않지만 N 형식은 검사한다
-        FieldConverter.readN(bytes, CommonField.SEND_COUNT);
+        FieldDecoder.readN(bytes, CommonField.SEND_COUNT);
         return commonPart;
     }
 }
