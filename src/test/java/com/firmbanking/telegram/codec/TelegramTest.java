@@ -316,15 +316,15 @@ class TelegramTest {
         void 전문구분을_응답으로_바꾼다(String requestType, String responseType) {
             // given
             byte[] bytes = request();
-            put(bytes, CommonPart.TELEGRAM_TYPE_CODE, requestType);
+            put(bytes, CommonField.TELEGRAM_TYPE_CODE, requestType);
             Telegram telegram = new Telegram(bytes);
 
             // when
             Telegram response = telegram.toResponse(ResponseCode.SUCCESS);
 
             // then
-            assertThat(read(response, CommonPart.TELEGRAM_TYPE_CODE)).isEqualTo(responseType);
-            assertThat(read(response, CommonPart.RESPONSE_CODE)).isEqualTo("0000");
+            assertThat(read(response, CommonField.TELEGRAM_TYPE_CODE)).isEqualTo(responseType);
+            assertThat(read(response, CommonField.RESPONSE_CODE)).isEqualTo("0000");
         }
 
         @Test
@@ -340,7 +340,7 @@ class TelegramTest {
 
             // then
             byte[] result = response.toBytes();
-            assertThat(read(response, CommonPart.RESPONSE_CODE)).isEqualTo("A001");
+            assertThat(read(response, CommonField.RESPONSE_CODE)).isEqualTo("A001");
             assertThat(Arrays.copyOfRange(result, 0, 24)).isEqualTo(Arrays.copyOfRange(bytes, 0, 24));
             assertThat(Arrays.copyOfRange(result, 28, 52)).isEqualTo(Arrays.copyOfRange(bytes, 28, 52));
             assertThat(Arrays.copyOfRange(result, 56, 300)).isEqualTo(Arrays.copyOfRange(bytes, 56, 300));
@@ -353,15 +353,15 @@ class TelegramTest {
         void 모르는_전문구분은_그대로_둔다(String requestType) {
             // given
             byte[] bytes = request();
-            put(bytes, CommonPart.TELEGRAM_TYPE_CODE, requestType);
+            put(bytes, CommonField.TELEGRAM_TYPE_CODE, requestType);
             Telegram telegram = new Telegram(bytes);
 
             // when
             Telegram response = telegram.toResponse(ResponseCode.UNSUPPORTED_TELEGRAM);
 
             // then
-            assertThat(read(response, CommonPart.TELEGRAM_TYPE_CODE)).isEqualTo(requestType);
-            assertThat(read(response, CommonPart.RESPONSE_CODE)).isEqualTo("A002");
+            assertThat(read(response, CommonField.TELEGRAM_TYPE_CODE)).isEqualTo(requestType);
+            assertThat(read(response, CommonField.RESPONSE_CODE)).isEqualTo("A002");
         }
 
         @Test

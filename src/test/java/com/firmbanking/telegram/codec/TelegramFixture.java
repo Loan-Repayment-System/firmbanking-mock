@@ -21,14 +21,14 @@ final class TelegramFixture {
      */
     static byte[] request() {
         byte[] bytes = blank();
-        put(bytes, CommonPart.COMPANY_NO, "CAPITAL00001");
-        put(bytes, CommonPart.BANK_CODE, "999");
-        put(bytes, CommonPart.TELEGRAM_TYPE_CODE, "2000");
-        put(bytes, CommonPart.BUSINESS_TYPE_CODE, "100");
-        put(bytes, CommonPart.SEND_COUNT, "1");
-        put(bytes, CommonPart.TELEGRAM_NO, "000123");
-        put(bytes, CommonPart.SEND_DATE, "20261029");
-        put(bytes, CommonPart.SEND_TIME, "143005");
+        put(bytes, CommonField.COMPANY_NO, "CAPITAL00001");
+        put(bytes, CommonField.BANK_CODE, "999");
+        put(bytes, CommonField.TELEGRAM_TYPE_CODE, "2000");
+        put(bytes, CommonField.BUSINESS_TYPE_CODE, "100");
+        put(bytes, CommonField.SEND_COUNT, "1");
+        put(bytes, CommonField.TELEGRAM_NO, "000123");
+        put(bytes, CommonField.SEND_DATE, "20261029");
+        put(bytes, CommonField.SEND_TIME, "143005");
         return bytes;
     }
 

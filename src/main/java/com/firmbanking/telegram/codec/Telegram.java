@@ -59,11 +59,11 @@ public class Telegram {
      */
     public Telegram toResponse(ResponseCode responseCode) {
         Telegram response = new Telegram(bytes);
-        String responseTelegramTypeCode = RESPONSE_TELEGRAM_TYPE_CODES.get(readAscii(CommonPart.TELEGRAM_TYPE_CODE));
+        String responseTelegramTypeCode = RESPONSE_TELEGRAM_TYPE_CODES.get(readAscii(CommonField.TELEGRAM_TYPE_CODE));
         if (responseTelegramTypeCode != null) {
-            response.writeAN(CommonPart.TELEGRAM_TYPE_CODE, responseTelegramTypeCode);
+            response.writeAN(CommonField.TELEGRAM_TYPE_CODE, responseTelegramTypeCode);
         }
-        response.writeAN(CommonPart.RESPONSE_CODE, responseCode.getCode());
+        response.writeAN(CommonField.RESPONSE_CODE, responseCode.getCode());
         return response;
     }
 
