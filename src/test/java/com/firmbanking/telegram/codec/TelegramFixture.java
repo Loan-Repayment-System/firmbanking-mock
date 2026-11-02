@@ -7,11 +7,13 @@ import java.util.Arrays;
  */
 final class TelegramFixture {
 
+    static final int LENGTH = 300;
+
     private TelegramFixture() {
     }
 
     static byte[] blank() {
-        byte[] bytes = new byte[Telegram.LENGTH];
+        byte[] bytes = new byte[LENGTH];
         Arrays.fill(bytes, (byte) ' ');
         return bytes;
     }
@@ -36,7 +38,7 @@ final class TelegramFixture {
      * value를 EUC-KR로 필드 앞에서부터 넣고 남는 자리는 SPACE로 둔다.
      */
     static void put(byte[] bytes, TelegramField field, String value) {
-        put(bytes, field, value.getBytes(Telegram.CHARSET));
+        put(bytes, field, value.getBytes(FieldConverter.CHARSET));
     }
 
     static void put(byte[] bytes, TelegramField field, byte[] value) {
@@ -44,7 +46,13 @@ final class TelegramFixture {
         System.arraycopy(value, 0, bytes, field.offset(), value.length);
     }
 
-    static String read(Telegram telegram, TelegramField field) {
-        return new String(telegram.toBytes(), field.offset(), field.length(), Telegram.CHARSET);
+    static byte[] with(TelegramField field, String value) {
+        byte[] bytes = blank();
+        put(bytes, field, value);
+        return bytes;
+    }
+
+    static String read(byte[] bytes, TelegramField field) {
+        return new String(bytes, field.offset(), field.length(), FieldConverter.CHARSET);
     }
 }

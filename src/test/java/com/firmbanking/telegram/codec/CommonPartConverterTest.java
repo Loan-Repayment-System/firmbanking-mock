@@ -15,17 +15,17 @@ import static com.firmbanking.telegram.codec.TelegramFixture.request;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@DisplayName("CommonPart")
-class CommonPartTest {
+@DisplayName("CommonPartConverter")
+class CommonPartConverterTest {
 
     @Test
     @DisplayName("정상 공통부면 2000/100, CAPITAL00001, 000123, 2026-10-29 14:30:05로 읽는다")
     void 정상_공통부를_읽는다() {
         // given
-        Telegram telegram = new Telegram(request());
+        byte[] bytes = request();
 
         // when
-        CommonPart result = CommonPart.from(telegram);
+        CommonPart result = CommonPartConverter.read(bytes);
 
         // then
         assertThat(result.getTelegramTypeCode()).isEqualTo("2000");
@@ -56,10 +56,9 @@ class CommonPartTest {
         // given
         byte[] bytes = request();
         put(bytes, field, value);
-        Telegram telegram = new Telegram(bytes);
 
         // when, then
-        assertThatThrownBy(() -> CommonPart.from(telegram))
+        assertThatThrownBy(() -> CommonPartConverter.read(bytes))
                 .isInstanceOf(InvalidTelegramException.class);
     }
 
@@ -70,10 +69,9 @@ class CommonPartTest {
         // given
         byte[] bytes = request();
         put(bytes, CommonField.COMPANY_NO, new byte[]{(byte) 0xFF, (byte) 0xFF});
-        Telegram telegram = new Telegram(bytes);
 
         // when, then
-        assertThatThrownBy(() -> CommonPart.from(telegram))
+        assertThatThrownBy(() -> CommonPartConverter.read(bytes))
                 .isInstanceOf(InvalidTelegramException.class);
     }
 
@@ -86,10 +84,9 @@ class CommonPartTest {
         put(bytes, CommonField.BANK_CODE, "004");
         put(bytes, CommonField.SEND_COUNT, "2");
         put(bytes, CommonField.RESPONSE_CODE, "0000");
-        Telegram telegram = new Telegram(bytes);
 
         // when
-        CommonPart result = CommonPart.from(telegram);
+        CommonPart result = CommonPartConverter.read(bytes);
 
         // then
         assertThat(result.getBankCode()).isEqualTo("004");

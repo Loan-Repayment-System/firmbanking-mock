@@ -15,12 +15,10 @@ import java.time.format.ResolverStyle;
 import java.util.Arrays;
 
 /**
- * 전문 본문 300바이트. 필드는 offset·길이로 읽고 쓴다.
+ * 전문 필드 ↔ Java 값. N은 오른쪽 정렬·앞 0, AN은 왼쪽 정렬·뒤 SPACE, 인코딩은 EUC-KR이다 (전문 명세 2절).
  * 요청 형식 오류는 InvalidTelegramException(A001), 응답에 쓸 값이 틀리면 코드 버그라 IllegalArgumentException(9999)이다.
  */
-public class Telegram {
-
-    public static final int LENGTH = 300;
+public final class FieldConverter {
 
     static final Charset CHARSET = Charset.forName("EUC-KR");
 
@@ -32,34 +30,24 @@ public class Telegram {
     private static final DateTimeFormatter TIME_FORMAT =
             DateTimeFormatter.ofPattern("HHmmss").withResolverStyle(ResolverStyle.STRICT);
 
-    private final byte[] bytes;
-
-    public Telegram(byte[] bytes) {
-        if (bytes.length != LENGTH) {
-            throw new IllegalArgumentException("전문 본문은 " + LENGTH + "바이트다: " + bytes.length);
-        }
-        this.bytes = bytes.clone();
+    private FieldConverter() {
     }
 
-    public byte[] toBytes() {
-        return bytes.clone();
-    }
-
-    public String readN(TelegramField field) {
+    public static String readN(byte[] bytes, TelegramField field) {
         for (int i = field.offset(); i < field.offset() + field.length(); i++) {
             if (bytes[i] < '0' || bytes[i] > '9') {
                 throw new InvalidTelegramException("N 필드에 숫자가 아닌 값이 있다: " + describe(field));
             }
         }
-        return readAscii(field);
+        return new String(bytes, field.offset(), field.length(), StandardCharsets.US_ASCII);
     }
 
-    public BigDecimal readAmount(TelegramField field) {
-        return new BigDecimal(readN(field));
+    public static BigDecimal readAmount(byte[] bytes, TelegramField field) {
+        return new BigDecimal(readN(bytes, field));
     }
 
-    public LocalDate readDate(TelegramField field) {
-        String value = readN(field);
+    public static LocalDate readDate(byte[] bytes, TelegramField field) {
+        String value = readN(bytes, field);
         try {
             return LocalDate.parse(value, DATE_FORMAT);
         } catch (DateTimeParseException e) {
@@ -67,8 +55,8 @@ public class Telegram {
         }
     }
 
-    public LocalTime readTime(TelegramField field) {
-        String value = readN(field);
+    public static LocalTime readTime(byte[] bytes, TelegramField field) {
+        String value = readN(bytes, field);
         try {
             return LocalTime.parse(value, TIME_FORMAT);
         } catch (DateTimeParseException e) {
@@ -79,7 +67,7 @@ public class Telegram {
     /**
      * 뒤쪽 SPACE를 뺀 값을 돌려준다.
      */
-    public String readAN(TelegramField field) {
+    public static String readAN(byte[] bytes, TelegramField field) {
         int end = field.offset() + field.length();
         while (end > field.offset() && bytes[end - 1] == SPACE) {
             end--;
@@ -95,19 +83,19 @@ public class Telegram {
         }
     }
 
-    public void writeN(TelegramField field, long value) {
+    public static void writeN(byte[] bytes, TelegramField field, long value) {
         if (value < 0) {
             throw new IllegalArgumentException("N 필드에 음수를 쓸 수 없다: " + value);
         }
-        writeDigits(field, Long.toString(value));
+        writeDigits(bytes, field, Long.toString(value));
     }
 
-    public void writeAmount(TelegramField field, BigDecimal value) {
+    public static void writeAmount(byte[] bytes, TelegramField field, BigDecimal value) {
         if (value.signum() < 0) {
             throw new IllegalArgumentException("N 필드에 음수를 쓸 수 없다: " + value);
         }
         try {
-            writeDigits(field, value.toBigIntegerExact().toString());
+            writeDigits(bytes, field, value.toBigIntegerExact().toString());
         } catch (ArithmeticException e) {
             throw new IllegalArgumentException("금액은 원 단위다: " + value);
         }
@@ -116,7 +104,7 @@ public class Telegram {
     /**
      * 왼쪽부터 채우고 남는 자리는 SPACE. 길이를 넘으면 글자 경계에서 자른다.
      */
-    public void writeAN(TelegramField field, String value) {
+    public static void writeAN(byte[] bytes, TelegramField field, String value) {
         CharsetEncoder encoder = CHARSET.newEncoder();
         int position = field.offset();
         int end = field.offset() + field.length();
@@ -137,17 +125,13 @@ public class Telegram {
         Arrays.fill(bytes, position, end, SPACE);
     }
 
-    private void writeDigits(TelegramField field, String digits) {
+    private static void writeDigits(byte[] bytes, TelegramField field, String digits) {
         if (digits.length() > field.length()) {
             throw new IllegalArgumentException("N 필드 길이를 넘는다: " + digits + " " + describe(field));
         }
         int start = field.offset() + field.length() - digits.length();
         Arrays.fill(bytes, field.offset(), start, ZERO);
         System.arraycopy(digits.getBytes(StandardCharsets.US_ASCII), 0, bytes, start, digits.length());
-    }
-
-    private String readAscii(TelegramField field) {
-        return new String(bytes, field.offset(), field.length(), StandardCharsets.US_ASCII);
     }
 
     private static String describe(TelegramField field) {
