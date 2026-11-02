@@ -36,7 +36,8 @@ public class TelegramDispatcher {
         ResponseTelegram response = ResponseTelegram.copyOf(bytes);
         ResponseCode responseCode;
         try {
-            responseCode = process(bytes, response);
+            RequestTelegram request = TelegramConverter.read(bytes);
+            responseCode = process(request, response);
         } catch (InvalidTelegramException e) {
             // 거래가 쓰다 만 개별부를 버린다.
             response = ResponseTelegram.copyOf(bytes);
@@ -49,8 +50,7 @@ public class TelegramDispatcher {
         return response.complete(responseCode);
     }
 
-    private ResponseCode process(byte[] bytes, ResponseTelegram response) {
-        RequestTelegram request = TelegramConverter.read(bytes);
+    private ResponseCode process(RequestTelegram request, ResponseTelegram response) {
         CommonPart commonPart = request.getCommonPart();
         TelegramTransaction transaction =
                 transactions.get(key(commonPart.getTelegramTypeCode(), commonPart.getBusinessTypeCode()));
