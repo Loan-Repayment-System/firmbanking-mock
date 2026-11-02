@@ -32,6 +32,7 @@ class CommonPartConverterTest {
         assertThat(result.getBusinessTypeCode()).isEqualTo("100");
         assertThat(result.getCompanyNo()).isEqualTo("CAPITAL00001");
         assertThat(result.getBankCode()).isEqualTo("999");
+        assertThat(result.getSendCount()).isEqualTo("1");
         assertThat(result.getTelegramNo()).isEqualTo("000123");
         assertThat(result.getSendDate()).isEqualTo(LocalDate.of(2026, 10, 29));
         assertThat(result.getSendTime()).isEqualTo(LocalTime.of(14, 30, 5));

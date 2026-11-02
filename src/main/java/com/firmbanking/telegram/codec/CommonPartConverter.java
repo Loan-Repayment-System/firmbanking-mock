@@ -9,17 +9,15 @@ public final class CommonPartConverter {
     }
 
     public static CommonPart read(byte[] bytes) {
-        CommonPart commonPart = CommonPart.builder()
+        return CommonPart.builder()
                 .companyNo(FieldDecoder.readAN(bytes, CommonField.COMPANY_NO))
                 .bankCode(FieldDecoder.readN(bytes, CommonField.BANK_CODE))
                 .telegramTypeCode(FieldDecoder.readN(bytes, CommonField.TELEGRAM_TYPE_CODE))
                 .businessTypeCode(FieldDecoder.readN(bytes, CommonField.BUSINESS_TYPE_CODE))
+                .sendCount(FieldDecoder.readN(bytes, CommonField.SEND_COUNT))
                 .telegramNo(FieldDecoder.readN(bytes, CommonField.TELEGRAM_NO))
                 .sendDate(FieldDecoder.readDate(bytes, CommonField.SEND_DATE))
                 .sendTime(FieldDecoder.readTime(bytes, CommonField.SEND_TIME))
                 .build();
-        // 송신회수는 쓰지 않지만 N 형식은 검사한다
-        FieldDecoder.readN(bytes, CommonField.SEND_COUNT);
-        return commonPart;
     }
 }

@@ -17,6 +17,7 @@ public class CommonPart {
     private final String bankCode;
     private final String telegramTypeCode;
     private final String businessTypeCode;
+    private final String sendCount;
     private final String telegramNo;
     private final LocalDate sendDate;
     private final LocalTime sendTime;
