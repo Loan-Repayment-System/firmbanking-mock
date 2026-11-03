@@ -35,4 +35,13 @@ public enum ResponseCode {
     ;
 
     private final String code;
+
+    public static ResponseCode fromCode(String code) {
+        for (ResponseCode responseCode : values()) {
+            if (responseCode.code.equals(code)) {
+                return responseCode;
+            }
+        }
+        throw new IllegalArgumentException("ResponseCode에 없는 코드: " + code);
+    }
 }
