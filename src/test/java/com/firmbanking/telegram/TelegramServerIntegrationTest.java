@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * test 프로필: 빈 포트, 읽기 타임아웃 1초. 등록된 거래가 없어서 정상 공통부 요청은 A002로 응답한다.
+ * test 프로필: 빈 포트, 읽기 타임아웃 1초. 2000/100 거래가 없어서 정상 공통부 요청은 A002로 응답한다.
  */
 @SpringBootTest
 @Import(TestcontainersConfig.class)
