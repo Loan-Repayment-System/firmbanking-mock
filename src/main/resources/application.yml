@@ -19,3 +19,9 @@ mybatis:
   type-handlers-package: com.firmbanking.global.config.typehandler
   configuration:
     map-underscore-to-camel-case: true
+
+telegram:
+  # repayment-backend와 함께 띄우므로 겹치지 않는 9001을 쓴다.
+  port: 9001
+  read-timeout: 10s
+  thread-pool-size: 20
