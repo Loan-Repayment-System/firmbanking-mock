@@ -4,11 +4,15 @@ import com.firmbanking.domain.account.dto.response.AccountDetailResponse;
 import com.firmbanking.domain.account.mapper.AccountMapper;
 import com.firmbanking.domain.company.dto.response.CompanyDetailResponse;
 import com.firmbanking.domain.company.mapper.CompanyMapper;
+import com.firmbanking.domain.consent.dto.response.WithdrawalConsentDetailResponse;
+import com.firmbanking.domain.consent.mapper.WithdrawalConsentMapper;
 import com.firmbanking.domain.transfer.dto.request.CreateTransferRequest;
 import com.firmbanking.domain.transfer.dto.request.ExecuteTransferRequest;
 import com.firmbanking.domain.transfer.dto.response.TransferResultResponse;
 import com.firmbanking.domain.transfer.mapper.TransferMapper;
+import com.firmbanking.global.code.ConsentStatus;
 import com.firmbanking.global.code.ResponseCode;
+import com.firmbanking.global.code.TransferType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +22,7 @@ import java.math.BigDecimal;
 /**
  * 이체 처리 흐름 3~6단계를 한 트랜잭션으로 처리한다 (프로그램 설계 1절).
  * 거절도 잔액은 바꾸지 않고 이체 결과를 저장한다.
+ * 지급과 집금은 거래별 검사와 응답 잔액만 다르다.
  */
 @Component
 @RequiredArgsConstructor
@@ -26,6 +31,7 @@ public class TransferProcessor {
     private final AccountMapper accountMapper;
     private final CompanyMapper companyMapper;
     private final TransferMapper transferMapper;
+    private final WithdrawalConsentMapper withdrawalConsentMapper;
 
     @Transactional
     public TransferResultResponse process(ExecuteTransferRequest request) {
@@ -39,9 +45,9 @@ public class TransferProcessor {
         if (deposit == null) {
             return save(request, ResponseCode.DEPOSIT_ACCOUNT_NOT_FOUND, null);
         }
-        CompanyDetailResponse company = companyMapper.findByCompanyNo(request.getCompanyNo());
-        if (!withdrawal.getAccountId().equals(company.getPaymentAccountId())) {
-            return save(request, ResponseCode.NOT_COMPANY_ACCOUNT, null);
+        ResponseCode checked = checkTransferType(request, withdrawal, deposit);
+        if (checked != ResponseCode.SUCCESS) {
+            return save(request, checked, null);
         }
         if (withdrawal.getBalance().compareTo(request.getAmount()) < 0) {
             return save(request, ResponseCode.INSUFFICIENT_BALANCE, null);
@@ -50,10 +56,39 @@ public class TransferProcessor {
         if (withdrawal.getAccountId().equals(deposit.getAccountId())) {
             return save(request, ResponseCode.SUCCESS, withdrawal.getBalance());
         }
-        BigDecimal balanceAfter = withdrawal.getBalance().subtract(request.getAmount());
-        accountMapper.updateBalance(withdrawal.getAccountId(), balanceAfter);
-        accountMapper.updateBalance(deposit.getAccountId(), deposit.getBalance().add(request.getAmount()));
+        BigDecimal withdrawalBalance = withdrawal.getBalance().subtract(request.getAmount());
+        BigDecimal depositBalance = deposit.getBalance().add(request.getAmount());
+        accountMapper.updateBalance(withdrawal.getAccountId(), withdrawalBalance);
+        accountMapper.updateBalance(deposit.getAccountId(), depositBalance);
+        // 지급은 출금 후 지급 계좌 잔액, 집금은 입금 후 수납 계좌 잔액으로 응답한다 (전문 명세 4.1·4.2절).
+        BigDecimal balanceAfter = switch (request.getTransferType()) {
+            case PAYMENT -> withdrawalBalance;
+            case COLLECTION -> depositBalance;
+        };
         return save(request, ResponseCode.SUCCESS, balanceAfter);
+    }
+
+    /**
+     * 지급: 출금계좌가 업체 지급 계좌인가(B004).
+     * 집금: 입금계좌가 업체 수납 계좌인가(B004), 출금계좌가 출금 동의 등록 상태인가(C001).
+     * 통과하면 SUCCESS다.
+     */
+    private ResponseCode checkTransferType(ExecuteTransferRequest request, AccountDetailResponse withdrawal,
+                                           AccountDetailResponse deposit) {
+        CompanyDetailResponse company = companyMapper.findByCompanyNo(request.getCompanyNo());
+        if (request.getTransferType() == TransferType.PAYMENT) {
+            return withdrawal.getAccountId().equals(company.getPaymentAccountId())
+                    ? ResponseCode.SUCCESS : ResponseCode.NOT_COMPANY_ACCOUNT;
+        }
+        if (!deposit.getAccountId().equals(company.getCollectionAccountId())) {
+            return ResponseCode.NOT_COMPANY_ACCOUNT;
+        }
+        WithdrawalConsentDetailResponse consent =
+                withdrawalConsentMapper.findByCompanyNoAndAccountId(request.getCompanyNo(), withdrawal.getAccountId());
+        if (consent == null || consent.getConsentStatusId() != ConsentStatus.REGISTERED) {
+            return ResponseCode.CONSENT_NOT_REGISTERED;
+        }
+        return ResponseCode.SUCCESS;
     }
 
     private TransferResultResponse save(ExecuteTransferRequest request, ResponseCode responseCode,

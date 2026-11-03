@@ -4,10 +4,13 @@ import com.firmbanking.domain.account.dto.response.AccountDetailResponse;
 import com.firmbanking.domain.account.mapper.AccountMapper;
 import com.firmbanking.domain.company.dto.response.CompanyDetailResponse;
 import com.firmbanking.domain.company.mapper.CompanyMapper;
+import com.firmbanking.domain.consent.dto.response.WithdrawalConsentDetailResponse;
+import com.firmbanking.domain.consent.mapper.WithdrawalConsentMapper;
 import com.firmbanking.domain.transfer.dto.request.CreateTransferRequest;
 import com.firmbanking.domain.transfer.dto.request.ExecuteTransferRequest;
 import com.firmbanking.domain.transfer.dto.response.TransferResultResponse;
 import com.firmbanking.domain.transfer.mapper.TransferMapper;
+import com.firmbanking.global.code.ConsentStatus;
 import com.firmbanking.global.code.ResponseCode;
 import com.firmbanking.global.code.TransferType;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +43,7 @@ class TransferProcessorTest {
     private AccountMapper accountMapper;
     private CompanyMapper companyMapper;
     private TransferMapper transferMapper;
+    private WithdrawalConsentMapper withdrawalConsentMapper;
     private TransferProcessor transferProcessor;
 
     @BeforeEach
@@ -47,7 +51,8 @@ class TransferProcessorTest {
         accountMapper = mock(AccountMapper.class);
         companyMapper = mock(CompanyMapper.class);
         transferMapper = mock(TransferMapper.class);
-        transferProcessor = new TransferProcessor(accountMapper, companyMapper, transferMapper);
+        withdrawalConsentMapper = mock(WithdrawalConsentMapper.class);
+        transferProcessor = new TransferProcessor(accountMapper, companyMapper, transferMapper, withdrawalConsentMapper);
         given(companyMapper.findByCompanyNo(COMPANY_NO)).willReturn(CompanyDetailResponse.builder()
                 .companyNo(COMPANY_NO)
                 .companyName("캐피탈")
@@ -206,6 +211,20 @@ class TransferProcessorTest {
         }
     }
 
+    @Test
+    @DisplayName("지급은 출금 동의를 조회하지 않는다")
+    void 지급은_출금_동의를_보지_않는다() {
+        // given
+        givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "10000000000");
+        givenAccount(CUSTOMER_ACCOUNT_ID, CUSTOMER_ACCOUNT_NO, "10000000");
+
+        // when
+        transferProcessor.process(request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO, "1000000"));
+
+        // then
+        then(withdrawalConsentMapper).shouldHaveNoInteractions();
+    }
+
     // 따로 쓰면 입금이 조회한 잔액으로 출금을 덮어써 돈이 생긴다
     @Test
     @DisplayName("입금계좌가 지급 계좌 자신이면 잔액을 바꾸지 않고 0000 / 10,000,000,000으로 저장한다")
@@ -225,6 +244,160 @@ class TransferProcessorTest {
         assertThat(saved.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("10000000000"));
     }
 
+    @Nested
+    @DisplayName("집금일 때")
+    class Collection {
+
+        @Nested
+        @DisplayName("입금계좌가 수납 계좌가 아닐 때")
+        class NotCollectionAccount {
+
+            @BeforeEach
+            void setUp() {
+                givenAccount(CUSTOMER_ACCOUNT_ID, CUSTOMER_ACCOUNT_NO, "10000000");
+                givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "10000000000");
+            }
+
+            // 전문 명세 5절 B004: 집금 입금계좌가 업체 수납 계좌가 아님
+            @Test
+            @DisplayName("입금계좌가 지급 계좌 100-000-000002면 B004를 돌려주고 잔액을 바꾸지 않으며 B004 / 잔액 null로 저장한다")
+            void 지급_계좌면_B004다() {
+                // given
+                givenConsent(CUSTOMER_ACCOUNT_ID, ConsentStatus.REGISTERED);
+
+                // when
+                TransferResultResponse result = transferProcessor.process(
+                        collection(CUSTOMER_ACCOUNT_NO, PAYMENT_ACCOUNT_NO, "1000000"));
+
+                // then
+                assertRejected(result, ResponseCode.NOT_COMPANY_ACCOUNT);
+            }
+
+            // 프로그램 설계 1절: 수납 계좌 확인(B004)이 출금 동의 확인(C001)보다 먼저다
+            @Test
+            @DisplayName("출금 동의도 없으면 B004를 돌려준다")
+            void 출금_동의도_없으면_B004다() {
+                // when
+                TransferResultResponse result = transferProcessor.process(
+                        collection(CUSTOMER_ACCOUNT_NO, PAYMENT_ACCOUNT_NO, "1000000"));
+
+                // then
+                assertRejected(result, ResponseCode.NOT_COMPANY_ACCOUNT);
+            }
+        }
+
+        @Nested
+        @DisplayName("고객 계좌 1,000만 원에서 수납 계좌 0원으로 집금할 때")
+        class ToCollectionAccount {
+
+            @BeforeEach
+            void setUp() {
+                givenAccount(CUSTOMER_ACCOUNT_ID, CUSTOMER_ACCOUNT_NO, "10000000");
+                givenAccount(COLLECTION_ACCOUNT_ID, COLLECTION_ACCOUNT_NO, "0");
+            }
+
+            // 전문 명세 5절 C001: 집금 출금계좌가 등록되지 않았거나 해지됨
+            @Test
+            @DisplayName("출금 동의 행이 없으면 C001을 돌려주고 잔액을 바꾸지 않으며 C001 / 잔액 null로 저장한다")
+            void 동의가_없으면_C001이다() {
+                // when
+                TransferResultResponse result = transferProcessor.process(
+                        collection(CUSTOMER_ACCOUNT_NO, COLLECTION_ACCOUNT_NO, "1000000"));
+
+                // then
+                assertRejected(result, ResponseCode.CONSENT_NOT_REGISTERED);
+            }
+
+            @Test
+            @DisplayName("출금 동의가 해지 상태면 C001을 돌려준다")
+            void 해지_상태면_C001이다() {
+                // given
+                givenConsent(CUSTOMER_ACCOUNT_ID, ConsentStatus.CANCELLED);
+
+                // when
+                TransferResultResponse result = transferProcessor.process(
+                        collection(CUSTOMER_ACCOUNT_NO, COLLECTION_ACCOUNT_NO, "1000000"));
+
+                // then
+                assertRejected(result, ResponseCode.CONSENT_NOT_REGISTERED);
+            }
+
+            // 프로그램 설계 1절: 거래별 검사(C001)가 잔액 확인(B003)보다 먼저다
+            @Test
+            @DisplayName("출금 동의가 없으면 20,000,000을 집금해 잔액이 모자라도 C001을 돌려준다")
+            void 잔액도_모자라면_C001이다() {
+                // when
+                TransferResultResponse result = transferProcessor.process(
+                        collection(CUSTOMER_ACCOUNT_NO, COLLECTION_ACCOUNT_NO, "20000000"));
+
+                // then
+                assertRejected(result, ResponseCode.CONSENT_NOT_REGISTERED);
+            }
+
+            @Nested
+            @DisplayName("출금 동의가 등록 상태일 때")
+            class Registered {
+
+                @BeforeEach
+                void setUp() {
+                    givenConsent(CUSTOMER_ACCOUNT_ID, ConsentStatus.REGISTERED);
+                }
+
+                // 전문 명세 5절 B003: 출금계좌 잔액이 출금금액보다 적음
+                @Test
+                @DisplayName("20,000,000을 집금하면 B003을 돌려주고 잔액을 바꾸지 않으며 B003 / 잔액 null로 저장한다")
+                void 잔액이_모자라면_B003이다() {
+                    // when
+                    TransferResultResponse result = transferProcessor.process(
+                            collection(CUSTOMER_ACCOUNT_NO, COLLECTION_ACCOUNT_NO, "20000000"));
+
+                    // then
+                    assertRejected(result, ResponseCode.INSUFFICIENT_BALANCE);
+                }
+
+                // 전문 명세 4.2절: 입금후잔액은 입금 후 캐피탈 수납 계좌 잔액
+                @Test
+                @DisplayName("1,000,000을 집금하면 고객 계좌 9,000,000, 수납 계좌 1,000,000으로 바꾸고 집금 / 0000 / 1,000,000으로 저장한다")
+                void 출금하고_입금한다() {
+                    // when
+                    TransferResultResponse result = transferProcessor.process(
+                            collection(CUSTOMER_ACCOUNT_NO, COLLECTION_ACCOUNT_NO, "1000000"));
+
+                    // then
+                    assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
+                    assertThat(result.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("1000000"));
+                    then(accountMapper).should().updateBalance(CUSTOMER_ACCOUNT_ID, new BigDecimal("9000000"));
+                    then(accountMapper).should().updateBalance(COLLECTION_ACCOUNT_ID, new BigDecimal("1000000"));
+                    CreateTransferRequest saved = captureSaved();
+                    assertThat(saved.getTransferType()).isEqualTo(TransferType.COLLECTION);
+                    assertThat(saved.getWithdrawalAccountNo()).isEqualTo(CUSTOMER_ACCOUNT_NO);
+                    assertThat(saved.getDepositAccountNo()).isEqualTo(COLLECTION_ACCOUNT_NO);
+                    assertThat(saved.getResponseCode()).isEqualTo("0000");
+                    assertThat(saved.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("1000000"));
+                }
+            }
+        }
+
+        // 따로 쓰면 입금이 조회한 잔액으로 출금을 덮어써 돈이 생긴다
+        @Test
+        @DisplayName("출금계좌가 출금 동의한 수납 계좌 자신(잔액 5,000,000)이면 잔액을 바꾸지 않고 0000 / 5,000,000으로 저장한다")
+        void 같은_계좌면_잔액을_바꾸지_않는다() {
+            // given
+            givenAccount(COLLECTION_ACCOUNT_ID, COLLECTION_ACCOUNT_NO, "5000000");
+            givenConsent(COLLECTION_ACCOUNT_ID, ConsentStatus.REGISTERED);
+
+            // when
+            TransferResultResponse result = transferProcessor.process(
+                    collection(COLLECTION_ACCOUNT_NO, COLLECTION_ACCOUNT_NO, "1000000"));
+
+            // then
+            assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
+            assertThat(result.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("5000000"));
+            then(accountMapper).should(never()).updateBalance(any(), any());
+            assertThat(captureSaved().getBalanceAfter()).isEqualByComparingTo(new BigDecimal("5000000"));
+        }
+    }
+
     private void givenAccount(Long accountId, String accountNo, String balance) {
         given(accountMapper.findByBankCodeAndAccountNo(BANK_CODE, accountNo)).willReturn(AccountDetailResponse.builder()
                 .accountId(accountId)
@@ -233,6 +406,18 @@ class TransferProcessorTest {
                 .holderName("예금주")
                 .balance(new BigDecimal(balance))
                 .build());
+    }
+
+    private void givenConsent(Long accountId, ConsentStatus status) {
+        given(withdrawalConsentMapper.findByCompanyNoAndAccountId(COMPANY_NO, accountId)).willReturn(
+                WithdrawalConsentDetailResponse.builder()
+                        .consentId(20L)
+                        .companyNo(COMPANY_NO)
+                        .accountId(accountId)
+                        .consentStatusId(status)
+                        .payerNo("L0001")
+                        .appliedDate("20261103")
+                        .build());
     }
 
     private void assertRejected(TransferResultResponse result, ResponseCode responseCode) {
@@ -251,12 +436,21 @@ class TransferProcessorTest {
     }
 
     private static ExecuteTransferRequest request(String withdrawalAccountNo, String depositAccountNo, String amount) {
+        return request(TransferType.PAYMENT, withdrawalAccountNo, depositAccountNo, amount);
+    }
+
+    private static ExecuteTransferRequest collection(String withdrawalAccountNo, String depositAccountNo, String amount) {
+        return request(TransferType.COLLECTION, withdrawalAccountNo, depositAccountNo, amount);
+    }
+
+    private static ExecuteTransferRequest request(TransferType transferType, String withdrawalAccountNo,
+                                                  String depositAccountNo, String amount) {
         return ExecuteTransferRequest.builder()
                 .companyNo(COMPANY_NO)
                 .sentDate("20261029")
                 .messageNo("000123")
                 .sentTime("143005")
-                .transferType(TransferType.PAYMENT)
+                .transferType(transferType)
                 .withdrawalBankCode(BANK_CODE)
                 .withdrawalAccountNo(withdrawalAccountNo)
                 .depositBankCode(BANK_CODE)
