@@ -8,6 +8,7 @@ import com.firmbanking.global.code.ResponseCode;
 import com.firmbanking.telegram.codec.InvalidTelegramException;
 import com.firmbanking.telegram.codec.ResponseTelegram;
 import com.firmbanking.telegram.codec.TelegramConverter;
+import com.firmbanking.telegram.message.field.NameInquiryField;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -65,7 +66,7 @@ class NameInquiryMessageTest {
         void 금액이_숫자가_아니면_예외를_던진다() {
             // given
             byte[] request = NameInquiryFixture.request("999", "200-000-000001", "900101");
-            put(request, NameInquiryMessage.AMOUNT, "000000000001X");
+            put(request, NameInquiryField.AMOUNT, "000000000001X");
 
             // when, then
             assertThatThrownBy(() -> process(request)).isInstanceOf(InvalidTelegramException.class);
@@ -100,7 +101,7 @@ class NameInquiryMessageTest {
 
             // then
             assertThat(responseCode).isEqualTo(ResponseCode.SUCCESS);
-            assertThat(read(response.complete(responseCode), NameInquiryMessage.HOLDER_NAME))
+            assertThat(read(response.complete(responseCode), NameInquiryField.HOLDER_NAME))
                     .isEqualTo("김철수      ");
             ArgumentCaptor<InquireAccountNameRequest> captor = ArgumentCaptor.forClass(InquireAccountNameRequest.class);
             then(accountNameService).should().inquire(captor.capture());
@@ -122,7 +123,7 @@ class NameInquiryMessageTest {
             ResponseCode responseCode = message.process(TelegramConverter.read(request), response);
 
             // then
-            assertThat(read(response.complete(responseCode), NameInquiryMessage.HOLDER_NAME)).isEqualTo("남궁가나다라");
+            assertThat(read(response.complete(responseCode), NameInquiryField.HOLDER_NAME)).isEqualTo("남궁가나다라");
         }
     }
 
@@ -140,7 +141,7 @@ class NameInquiryMessageTest {
 
         // then
         assertThat(responseCode).isEqualTo(ResponseCode.WITHDRAWAL_ACCOUNT_NOT_FOUND);
-        assertThat(read(response.complete(responseCode), NameInquiryMessage.HOLDER_NAME)).isEqualTo(" ".repeat(12));
+        assertThat(read(response.complete(responseCode), NameInquiryField.HOLDER_NAME)).isEqualTo(" ".repeat(12));
     }
 
     private ResponseCode process(byte[] request) {
