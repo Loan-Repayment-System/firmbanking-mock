@@ -1,6 +1,5 @@
 package com.firmbanking.telegram;
 
-import com.firmbanking.domain.company.service.CompanyService;
 import com.firmbanking.global.code.ResponseCode;
 import com.firmbanking.telegram.codec.CommonPart;
 import com.firmbanking.telegram.codec.InvalidTelegramException;
@@ -17,7 +16,7 @@ import java.util.stream.Collectors;
 
 /**
  * 요청 전문 300바이트를 거래에 넘기고 응답 전문 300바이트를 만든다.
- * 순서: 공통부 형식(A001) → 거래 조합(A002) → 업체(A003) → 거래 처리. 예상 못한 예외는 9999다.
+ * 순서: 공통부 형식(A001) → 거래 조합(A002) → 거래 처리. 예상 못한 예외는 9999다.
  * 응답은 요청 원문을 복사한 ResponseTelegram에 거래가 개별부를 채운 것이다 (전문 명세 2절).
  */
 @Slf4j
@@ -25,14 +24,12 @@ import java.util.stream.Collectors;
 public class TelegramDispatcher {
 
     private final Map<String, TelegramTransaction> transactions;
-    private final CompanyService companyService;
 
-    public TelegramDispatcher(List<TelegramTransaction> transactions, CompanyService companyService) {
+    public TelegramDispatcher(List<TelegramTransaction> transactions) {
         this.transactions = transactions.stream()
                 .collect(Collectors.toMap(TelegramDispatcher::key, Function.identity(), (first, second) -> {
                     throw new IllegalStateException("같은 전문구분/업무구분의 거래가 둘이다: " + key(first));
                 }));
-        this.companyService = companyService;
     }
 
     public byte[] dispatch(byte[] bytes) {
@@ -59,9 +56,6 @@ public class TelegramDispatcher {
                 transactions.get(key(commonPart.getTelegramTypeCode(), commonPart.getBusinessTypeCode()));
         if (transaction == null) {
             return ResponseCode.UNSUPPORTED_TELEGRAM;
-        }
-        if (!companyService.isRegistered(commonPart.getCompanyNo())) {
-            return ResponseCode.UNREGISTERED_COMPANY;
         }
         return transaction.process(request, response);
     }
