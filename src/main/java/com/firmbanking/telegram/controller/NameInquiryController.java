@@ -1,14 +1,14 @@
-package com.firmbanking.telegram.message;
+package com.firmbanking.telegram.controller;
 
 import com.firmbanking.domain.account.dto.request.InquireAccountNameRequest;
 import com.firmbanking.domain.account.dto.response.AccountNameResponse;
 import com.firmbanking.domain.account.service.AccountNameService;
 import com.firmbanking.domain.company.service.CompanyService;
 import com.firmbanking.global.code.ResponseCode;
-import com.firmbanking.telegram.TelegramTransaction;
+import com.firmbanking.telegram.TelegramController;
 import com.firmbanking.telegram.codec.RequestTelegram;
 import com.firmbanking.telegram.codec.ResponseTelegram;
-import com.firmbanking.telegram.message.field.NameInquiryField;
+import com.firmbanking.telegram.controller.field.NameInquiryField;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-public class NameInquiryMessage implements TelegramTransaction {
+public class NameInquiryController implements TelegramController {
 
     private final CompanyService companyService;
     private final AccountNameService accountNameService;

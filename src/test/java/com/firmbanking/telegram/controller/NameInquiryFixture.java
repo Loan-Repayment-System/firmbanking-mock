@@ -1,8 +1,8 @@
-package com.firmbanking.telegram.message;
+package com.firmbanking.telegram.controller;
 
 import com.firmbanking.telegram.codec.CommonField;
 import com.firmbanking.telegram.codec.TelegramFixture;
-import com.firmbanking.telegram.message.field.NameInquiryField;
+import com.firmbanking.telegram.controller.field.NameInquiryField;
 
 import static com.firmbanking.telegram.codec.TelegramFixture.put;
 

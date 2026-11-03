@@ -42,9 +42,10 @@ com.firmbanking
 ├─ telegram/                        # 전문 수신(TCP). 업무 로직은 두지 않는다
 │  ├─ TelegramServer                # 포트를 열고 연결마다 TelegramHandler를 스레드 풀에 넘긴다
 │  ├─ TelegramHandler               # 연결 하나: 읽기 → 디스패치 → 쓰기 → 닫기
-│  ├─ TelegramDispatcher            # 거래 선택(A002), 업체 확인(A003), 예상 못한 예외 → 9999
+│  ├─ TelegramDispatcher            # 컨트롤러 선택(A002), 예상 못한 예외 → 9999
 │  ├─ codec/                        # 바이트 ↔ 전문. EUC-KR, N/AN, 형식 오류(A001)
-│  └─ message/                      # 거래별 개별부 ↔ 도메인 DTO
+│  └─ controller/                   # 거래별 컨트롤러: 업체 확인(A003), 개별부 ↔ 도메인 DTO, 서비스 호출
+│     └─ field/                     # 거래별 개별부 필드 위치
 ├─ domain/
 │  └─ {도메인}/                       # transfer, consent, account
 │     ├─ service/
@@ -60,7 +61,7 @@ src/main/resources/mapper/{도메인}/{대상}Mapper.xml
 
 - 도메인은 업무 기능 단위로 나누고, 구현하면서 정한다. 테이블 단위로 나누지 않는다.
 - 코드성 테이블 enum은 여러 기능이 함께 쓰므로 도메인이 아니라 `global/code/`에 모은다.
-- `domain`은 `telegram`을 참조하지 않는다. 전문 객체는 `message/`에서 도메인 DTO로 바꿔 서비스에 넘긴다.
+- `domain`은 `telegram`을 참조하지 않는다. 전문 객체는 `controller/`에서 도메인 DTO로 바꿔 서비스에 넘긴다.
 - 서비스는 인터페이스 없이 클래스 하나로 만든다.
 - 다른 도메인의 매퍼는 조회만 직접 호출할 수 있다.
 
@@ -72,7 +73,7 @@ src/main/resources/mapper/{도메인}/{대상}Mapper.xml
 |---|---|---|
 | 패키지 | 소문자·단수 | `com.firmbanking.domain.account` |
 | 서비스 | `{대상}Service` | `TransferService` |
-| 거래별 전문 변환 | `{거래}Message` | `NameInquiryMessage` |
+| 거래별 컨트롤러 | `{거래}Controller` | `NameInquiryController` |
 | 매퍼 인터페이스 / XML | `{대상}Mapper` / `resources/mapper/{도메인}/{대상}Mapper.xml` | `mapper/account/AccountMapper.xml` |
 | 요청 DTO | `{동작}{대상}Request` | `CreateAccountRequest` |
 | 응답 DTO | `{대상}{용도}Response` | `AccountDetailResponse` |

@@ -1,4 +1,4 @@
-package com.firmbanking.telegram.message;
+package com.firmbanking.telegram.controller;
 
 import com.firmbanking.TestcontainersConfig;
 import com.firmbanking.telegram.TelegramClient;

@@ -1,4 +1,4 @@
-package com.firmbanking.telegram.message.field;
+package com.firmbanking.telegram.controller.field;
 
 import com.firmbanking.telegram.codec.TelegramField;
 

@@ -30,13 +30,13 @@ class TelegramDispatcherTest {
     // 거래가 채우는 개별부 응답 필드 자리
     private static final TelegramField RESULT_FIELD = new TelegramField(100, 4);
 
-    private TelegramTransaction transaction;
+    private TelegramController controller;
     private TelegramDispatcher dispatcher;
 
     @BeforeEach
     void setUp() {
-        transaction = transaction("2000", "100");
-        dispatcher = new TelegramDispatcher(List.of(transaction));
+        controller = controller("2000", "100");
+        dispatcher = new TelegramDispatcher(List.of(controller));
     }
 
     @Nested
@@ -131,7 +131,7 @@ class TelegramDispatcherTest {
             // then
             assertThat(read(response, CommonField.TELEGRAM_TYPE_CODE)).isEqualTo("2100");
             assertThat(read(response, CommonField.RESPONSE_CODE)).isEqualTo("A001");
-            then(transaction).should(never()).process(any(), any());
+            then(controller).should(never()).process(any(), any());
         }
 
         // 전문 명세 2절: 전문구분코드가 2000·6000·7000이 아니면 그대로 둔다
@@ -192,31 +192,31 @@ class TelegramDispatcherTest {
     @DisplayName("2000/100 거래가 둘이면 디스패처를 만들 때 IllegalStateException을 던진다")
     void 같은_조합의_거래가_둘이면_예외를_던진다() {
         // given
-        List<TelegramTransaction> duplicated = List.of(transaction("2000", "100"), transaction("2000", "100"));
+        List<TelegramController> duplicated = List.of(controller("2000", "100"), controller("2000", "100"));
 
         // when, then
         assertThatThrownBy(() -> new TelegramDispatcher(duplicated))
                 .isInstanceOf(IllegalStateException.class);
     }
 
-    private static TelegramTransaction transaction(String telegramTypeCode, String businessTypeCode) {
-        TelegramTransaction transaction = mock(TelegramTransaction.class);
-        given(transaction.telegramTypeCode()).willReturn(telegramTypeCode);
-        given(transaction.businessTypeCode()).willReturn(businessTypeCode);
-        return transaction;
+    private static TelegramController controller(String telegramTypeCode, String businessTypeCode) {
+        TelegramController controller = mock(TelegramController.class);
+        given(controller.telegramTypeCode()).willReturn(telegramTypeCode);
+        given(controller.businessTypeCode()).willReturn(businessTypeCode);
+        return controller;
     }
 
     private void willWriteAndReturn(ResponseCode responseCode) {
         willAnswer(invocation -> {
             invocation.<ResponseTelegram>getArgument(1).writeAN(RESULT_FIELD, "DONE");
             return responseCode;
-        }).given(transaction).process(any(), any());
+        }).given(controller).process(any(), any());
     }
 
     private void willWriteAndThrow(RuntimeException exception) {
         willAnswer(invocation -> {
             invocation.<ResponseTelegram>getArgument(1).writeAN(RESULT_FIELD, "DONE");
             throw exception;
-        }).given(transaction).process(any(), any());
+        }).given(controller).process(any(), any());
     }
 }
