@@ -1,5 +1,6 @@
 package com.firmbanking.telegram;
 
+import com.firmbanking.domain.company.service.CompanyService;
 import com.firmbanking.global.code.ResponseCode;
 import com.firmbanking.telegram.codec.CommonField;
 import com.firmbanking.telegram.codec.InvalidTelegramException;
@@ -31,12 +32,15 @@ class TelegramDispatcherTest {
     private static final TelegramField RESULT_FIELD = new TelegramField(100, 4);
 
     private TelegramTransaction transaction;
+    private CompanyService companyService;
     private TelegramDispatcher dispatcher;
 
     @BeforeEach
     void setUp() {
         transaction = transaction("2000", "100");
-        dispatcher = new TelegramDispatcher(List.of(transaction));
+        companyService = mock(CompanyService.class);
+        given(companyService.isRegistered("CAPITAL00001")).willReturn(true);
+        dispatcher = new TelegramDispatcher(List.of(transaction), companyService);
     }
 
     @Nested
@@ -188,6 +192,64 @@ class TelegramDispatcherTest {
         }
     }
 
+    @Nested
+    @DisplayName("업체번호가 등록되지 않았을 때")
+    class UnregisteredCompany {
+
+        @BeforeEach
+        void setUp() {
+            given(companyService.isRegistered("CAPITAL00001")).willReturn(false);
+        }
+
+        // 전문 명세 5절 A003: 공통부 업체번호가 등록되지 않음
+        @Test
+        @DisplayName("2000/100이면 전문구분 2100, 응답코드 A003으로 응답하고 거래를 호출하지 않는다")
+        void 업체가_없으면_A003으로_응답한다() {
+            // given
+            byte[] request = request();
+
+            // when
+            byte[] response = dispatcher.dispatch(request);
+
+            // then
+            assertThat(read(response, CommonField.TELEGRAM_TYPE_CODE)).isEqualTo("2100");
+            assertThat(read(response, CommonField.RESPONSE_CODE)).isEqualTo("A003");
+            then(transaction).should(never()).process(any(), any());
+        }
+
+        // 프로그램 설계 6.2: 거래 조합(A002)을 업체(A003)보다 먼저 본다
+        @Test
+        @DisplayName("2000/300이면 응답코드 A002로 응답하고 업체를 확인하지 않는다")
+        void 거래_조합이_없으면_A002로_응답한다() {
+            // given
+            byte[] request = request();
+            put(request, CommonField.BUSINESS_TYPE_CODE, "300");
+
+            // when
+            byte[] response = dispatcher.dispatch(request);
+
+            // then
+            assertThat(read(response, CommonField.RESPONSE_CODE)).isEqualTo("A002");
+            then(companyService).should(never()).isRegistered(any());
+        }
+
+        // 프로그램 설계 6.2: 공통부 형식(A001)을 업체(A003)보다 먼저 본다
+        @Test
+        @DisplayName("전문번호가 00012X면 응답코드 A001로 응답하고 업체를 확인하지 않는다")
+        void 공통부_형식_오류면_A001로_응답한다() {
+            // given
+            byte[] request = request();
+            put(request, CommonField.TELEGRAM_NO, "00012X");
+
+            // when
+            byte[] response = dispatcher.dispatch(request);
+
+            // then
+            assertThat(read(response, CommonField.RESPONSE_CODE)).isEqualTo("A001");
+            then(companyService).should(never()).isRegistered(any());
+        }
+    }
+
     @Test
     @DisplayName("2000/100 거래가 둘이면 디스패처를 만들 때 IllegalStateException을 던진다")
     void 같은_조합의_거래가_둘이면_예외를_던진다() {
@@ -195,7 +257,7 @@ class TelegramDispatcherTest {
         List<TelegramTransaction> duplicated = List.of(transaction("2000", "100"), transaction("2000", "100"));
 
         // when, then
-        assertThatThrownBy(() -> new TelegramDispatcher(duplicated))
+        assertThatThrownBy(() -> new TelegramDispatcher(duplicated, companyService))
                 .isInstanceOf(IllegalStateException.class);
     }
 
