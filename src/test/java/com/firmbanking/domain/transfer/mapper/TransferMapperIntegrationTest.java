@@ -76,6 +76,18 @@ class TransferMapperIntegrationTest {
             assertThat(transfer.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("9999000000"));
         }
 
+        // ERD transfer: 처리 시각은 created_at을 쓴다
+        @Test
+        @DisplayName("조회하면 DB가 채운 처리 시각 createdAt이 있다")
+        void 처리_시각이_채워진다() {
+            // when
+            TransferDetailResponse transfer =
+                    transferMapper.findByCompanyNoAndSentDateAndMessageNo(COMPANY_NO, SENT_DATE, "000123");
+
+            // then
+            assertThat(transfer.getCreatedAt()).isNotNull();
+        }
+
         // ERD transfer: UNIQUE (company_no, sent_date, message_no)
         @Test
         @DisplayName("같은 CAPITAL00001 / 20261029 / 000123으로 한 번 더 INSERT하면 DuplicateKeyException을 던진다")

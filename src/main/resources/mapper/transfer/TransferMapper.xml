@@ -15,7 +15,8 @@
                amount,
                memo,
                response_code,
-               balance_after
+               balance_after,
+               created_at
         FROM transfer
         WHERE company_no = #{companyNo}
           AND sent_date = #{sentDate}

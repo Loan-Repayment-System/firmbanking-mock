@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Getter
 @NoArgsConstructor
@@ -27,4 +28,5 @@ public class TransferDetailResponse {
     private String memo;
     private String responseCode;
     private BigDecimal balanceAfter;
+    private LocalDateTime createdAt;
 }
