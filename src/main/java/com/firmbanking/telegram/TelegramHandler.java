@@ -37,30 +37,17 @@ public class TelegramHandler {
     public void handle(Socket socket) {
         SocketAddress remote = socket.getRemoteSocketAddress();
         try (socket) {
-            byte[] request;
-            try {
-                request = readRequest(socket);
-            } catch (IOException e) {
-                log.warn("요청을 다 받지 못해 응답 없이 닫는다 {}: {}", remote, e.toString());
-                return;
-            }
+            byte[] request = readRequest(socket);
             log.info("수신 {} [{}]", remote, new String(request, CHARSET));
             long startedAt = System.nanoTime();
 
             byte[] response = dispatcher.dispatch(request);
-            try {
-                OutputStream out = socket.getOutputStream();
-                out.write(LENGTH_HEADER);
-                out.write(response);
-                out.flush();
-            } catch (IOException e) {
-                log.warn("응답 쓰기 실패 {}", remote, e);
-                return;
-            }
+            writeResponse(socket, response);
             long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
             log.info("송신 {} {}ms [{}]", remote, elapsedMillis, new String(response, CHARSET));
         } catch (IOException e) {
-            log.warn("연결 닫기 실패 {}", remote, e);
+            // 같은 주소의 수신 로그가 있으면 응답 쓰기 실패, 없으면 요청을 다 받지 못해 응답 없이 닫은 것이다.
+            log.warn("연결 처리 실패 {}: {}", remote, e.toString());
         }
     }
 
@@ -76,6 +63,13 @@ public class TelegramHandler {
         byte[] body = new byte[TelegramField.TELEGRAM_LENGTH];
         readFully(socket, in, body, deadline);
         return body;
+    }
+
+    private static void writeResponse(Socket socket, byte[] response) throws IOException {
+        OutputStream out = socket.getOutputStream();
+        out.write(LENGTH_HEADER);
+        out.write(response);
+        out.flush();
     }
 
     /**
