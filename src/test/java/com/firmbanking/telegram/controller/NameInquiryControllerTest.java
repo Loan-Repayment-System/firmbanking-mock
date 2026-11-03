@@ -1,4 +1,4 @@
-package com.firmbanking.telegram.message;
+package com.firmbanking.telegram.controller;
 
 import com.firmbanking.domain.account.dto.request.InquireAccountNameRequest;
 import com.firmbanking.domain.account.dto.response.AccountNameResponse;
@@ -8,7 +8,7 @@ import com.firmbanking.global.code.ResponseCode;
 import com.firmbanking.telegram.codec.InvalidTelegramException;
 import com.firmbanking.telegram.codec.ResponseTelegram;
 import com.firmbanking.telegram.codec.TelegramConverter;
-import com.firmbanking.telegram.message.field.NameInquiryField;
+import com.firmbanking.telegram.controller.field.NameInquiryField;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -25,18 +25,18 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 
-@DisplayName("NameInquiryMessage")
-class NameInquiryMessageTest {
+@DisplayName("NameInquiryController")
+class NameInquiryControllerTest {
 
     private CompanyService companyService;
     private AccountNameService accountNameService;
-    private NameInquiryMessage message;
+    private NameInquiryController controller;
 
     @BeforeEach
     void setUp() {
         companyService = mock(CompanyService.class);
         accountNameService = mock(AccountNameService.class);
-        message = new NameInquiryMessage(companyService, accountNameService);
+        controller = new NameInquiryController(companyService, accountNameService);
         given(companyService.isRegistered("CAPITAL00001")).willReturn(true);
     }
 
@@ -97,7 +97,7 @@ class NameInquiryMessageTest {
 
             // when
             ResponseTelegram response = ResponseTelegram.copyOf(request);
-            ResponseCode responseCode = message.process(TelegramConverter.read(request), response);
+            ResponseCode responseCode = controller.process(TelegramConverter.read(request), response);
 
             // then
             assertThat(responseCode).isEqualTo(ResponseCode.SUCCESS);
@@ -120,7 +120,7 @@ class NameInquiryMessageTest {
 
             // when
             ResponseTelegram response = ResponseTelegram.copyOf(request);
-            ResponseCode responseCode = message.process(TelegramConverter.read(request), response);
+            ResponseCode responseCode = controller.process(TelegramConverter.read(request), response);
 
             // then
             assertThat(read(response.complete(responseCode), NameInquiryField.HOLDER_NAME)).isEqualTo("남궁가나다라");
@@ -137,7 +137,7 @@ class NameInquiryMessageTest {
 
         // when
         ResponseTelegram response = ResponseTelegram.copyOf(request);
-        ResponseCode responseCode = message.process(TelegramConverter.read(request), response);
+        ResponseCode responseCode = controller.process(TelegramConverter.read(request), response);
 
         // then
         assertThat(responseCode).isEqualTo(ResponseCode.WITHDRAWAL_ACCOUNT_NOT_FOUND);
@@ -145,7 +145,7 @@ class NameInquiryMessageTest {
     }
 
     private ResponseCode process(byte[] request) {
-        return message.process(TelegramConverter.read(request), ResponseTelegram.copyOf(request));
+        return controller.process(TelegramConverter.read(request), ResponseTelegram.copyOf(request));
     }
 
     private static AccountNameResponse success(String holderName) {

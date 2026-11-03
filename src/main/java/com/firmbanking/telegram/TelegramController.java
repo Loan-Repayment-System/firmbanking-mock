@@ -5,9 +5,9 @@ import com.firmbanking.telegram.codec.RequestTelegram;
 import com.firmbanking.telegram.codec.ResponseTelegram;
 
 /**
- * 전문구분코드 + 업무구분코드 하나에 해당하는 거래. 빈으로 등록하면 디스패처가 찾는다.
+ * 전문구분코드 + 업무구분코드 하나에 해당하는 거래의 컨트롤러. 빈으로 등록하면 디스패처가 찾는다.
  */
-public interface TelegramTransaction {
+public interface TelegramController {
 
     String telegramTypeCode();
 

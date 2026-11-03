@@ -15,20 +15,20 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * 요청 전문 300바이트를 거래에 넘기고 응답 전문 300바이트를 만든다.
+ * 요청 전문 300바이트를 컨트롤러에 넘기고 응답 전문 300바이트를 만든다.
  * 순서: 공통부 형식(A001) → 거래 조합(A002) → 거래 처리. 예상 못한 예외는 9999다.
- * 응답은 요청 원문을 복사한 ResponseTelegram에 거래가 개별부를 채운 것이다 (전문 명세 2절).
+ * 응답은 요청 원문을 복사한 ResponseTelegram에 컨트롤러가 개별부를 채운 것이다 (전문 명세 2절).
  */
 @Slf4j
 @Component
 public class TelegramDispatcher {
 
-    private final Map<String, TelegramTransaction> transactions;
+    private final Map<String, TelegramController> controllers;
 
-    public TelegramDispatcher(List<TelegramTransaction> transactions) {
-        this.transactions = transactions.stream()
+    public TelegramDispatcher(List<TelegramController> controllers) {
+        this.controllers = controllers.stream()
                 .collect(Collectors.toMap(TelegramDispatcher::key, Function.identity(), (first, second) -> {
-                    throw new IllegalStateException("같은 전문구분/업무구분의 거래가 둘이다: " + key(first));
+                    throw new IllegalStateException("같은 전문구분/업무구분의 컨트롤러가 둘이다: " + key(first));
                 }));
     }
 
@@ -39,7 +39,7 @@ public class TelegramDispatcher {
             RequestTelegram request = TelegramConverter.read(bytes);
             responseCode = process(request, response);
         } catch (InvalidTelegramException e) {
-            // 거래가 쓰다 만 개별부를 버린다.
+            // 컨트롤러가 쓰다 만 개별부를 버린다.
             response = ResponseTelegram.copyOf(bytes);
             responseCode = ResponseCode.INVALID_FORMAT;
         } catch (Exception e) {
@@ -52,16 +52,16 @@ public class TelegramDispatcher {
 
     private ResponseCode process(RequestTelegram request, ResponseTelegram response) {
         CommonPart commonPart = request.getCommonPart();
-        TelegramTransaction transaction =
-                transactions.get(key(commonPart.getTelegramTypeCode(), commonPart.getBusinessTypeCode()));
-        if (transaction == null) {
+        TelegramController controller =
+                controllers.get(key(commonPart.getTelegramTypeCode(), commonPart.getBusinessTypeCode()));
+        if (controller == null) {
             return ResponseCode.UNSUPPORTED_TELEGRAM;
         }
-        return transaction.process(request, response);
+        return controller.process(request, response);
     }
 
-    private static String key(TelegramTransaction transaction) {
-        return key(transaction.telegramTypeCode(), transaction.businessTypeCode());
+    private static String key(TelegramController controller) {
+        return key(controller.telegramTypeCode(), controller.businessTypeCode());
     }
 
     private static String key(String telegramTypeCode, String businessTypeCode) {
