@@ -52,16 +52,15 @@ public class TelegramHandler {
     }
 
     private byte[] readRequest(Socket socket) throws IOException {
-        InputStream in = socket.getInputStream();
         long deadline = System.nanoTime() + properties.readTimeout().toNanos();
 
         byte[] header = new byte[LENGTH_HEADER.length];
-        readFully(socket, in, header, deadline);
+        readFully(socket, header, deadline);
         if (!Arrays.equals(header, LENGTH_HEADER)) {
             throw new ProtocolException("길이 헤더가 0300이 아니다: " + new String(header, StandardCharsets.US_ASCII));
         }
         byte[] body = new byte[TelegramField.TELEGRAM_LENGTH];
-        readFully(socket, in, body, deadline);
+        readFully(socket, body, deadline);
         return body;
     }
 
@@ -75,7 +74,8 @@ public class TelegramHandler {
     /**
      * read 한 번마다가 아니라 요청 전체에 시간 제한을 둔다. 조금씩 보내는 연결이 스레드를 붙잡지 못하게 한다.
      */
-    private static void readFully(Socket socket, InputStream in, byte[] buffer, long deadline) throws IOException {
+    private static void readFully(Socket socket, byte[] buffer, long deadline) throws IOException {
+        InputStream in = socket.getInputStream();
         int read = 0;
         while (read < buffer.length) {
             long remainingNanos = deadline - System.nanoTime();
