@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.firmbanking.domain.consent.mapper.WithdrawalConsentMapper">
+
+    <select id="findByCompanyNoAndAccountId" resultType="com.firmbanking.domain.consent.dto.response.WithdrawalConsentDetailResponse">
+        SELECT consent_id,
+               company_no,
+               account_id,
+               consent_status_id,
+               payer_no,
+               applied_date
+        FROM withdrawal_consent
+        WHERE company_no = #{companyNo}
+          AND account_id = #{accountId}
+    </select>
+
+    <insert id="insert">
+        INSERT INTO withdrawal_consent (company_no, account_id, consent_status_id, payer_no, applied_date)
+        VALUES (#{companyNo}, #{accountId}, #{consentStatus}, #{payerNo}, #{appliedDate})
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE withdrawal_consent
+        SET consent_status_id = #{consentStatus},
+            payer_no          = #{payerNo},
+            applied_date      = #{appliedDate}
+        WHERE consent_id = #{consentId}
+    </update>
+</mapper>
