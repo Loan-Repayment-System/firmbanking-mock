@@ -1,0 +1,5 @@
+telegram:
+  # 빈 포트를 쓴다. 실제 포트는 TelegramServer.getPort()로 얻는다.
+  port: 0
+  # 타임아웃 테스트를 빨리 끝내려고 줄인다.
+  read-timeout: 1s
