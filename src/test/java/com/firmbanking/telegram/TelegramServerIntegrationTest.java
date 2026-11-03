@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * test 프로필: 빈 포트, 읽기 타임아웃 1초. 2000/100 거래가 없어서 정상 공통부 요청은 A002로 응답한다.
+ * test 프로필: 빈 포트, 읽기 타임아웃 1초.
  */
 @SpringBootTest
 @Import(TestcontainersConfig.class)
@@ -49,16 +49,18 @@ class TelegramServerIntegrationTest {
 
         // 전문 명세 2절: 응답도 길이 헤더 + 본문 300바이트, 거래마다 연결 종료
         @Test
-        @DisplayName("2000/100 요청이면 헤더 0300과 전문구분 2100, 응답코드 A002인 300바이트를 받고 서버가 연결을 닫는다")
+        @DisplayName("없는 거래 2000/300 요청이면 헤더 0300과 전문구분 2100, 응답코드 A002인 300바이트를 받고 서버가 연결을 닫는다")
         void 응답을_보내고_연결을_닫는다() throws IOException {
             try (Socket socket = connect()) {
                 // given
-                byte[] expected = request();
+                byte[] request = request();
+                put(request, CommonField.BUSINESS_TYPE_CODE, "300");
+                byte[] expected = request.clone();
                 put(expected, CommonField.TELEGRAM_TYPE_CODE, "2100");
                 put(expected, CommonField.RESPONSE_CODE, "A002");
 
                 // when
-                send(socket, HEADER, request());
+                send(socket, HEADER, request);
 
                 // then
                 byte[] received = readUntilClosed(socket);

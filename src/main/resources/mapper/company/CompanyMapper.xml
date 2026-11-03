@@ -9,4 +9,13 @@
             WHERE company_no = #{companyNo}
         )
     </select>
+
+    <select id="findByCompanyNo" resultType="com.firmbanking.domain.company.dto.response.CompanyDetailResponse">
+        SELECT company_no,
+               company_name,
+               collection_account_id,
+               payment_account_id
+        FROM company
+        WHERE company_no = #{companyNo}
+    </select>
 </mapper>

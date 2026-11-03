@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.firmbanking.domain.transfer.mapper.TransferMapper">
+
+    <select id="findByCompanyNoAndSentDateAndMessageNo" resultType="com.firmbanking.domain.transfer.dto.response.TransferDetailResponse">
+        SELECT transfer_id,
+               company_no,
+               sent_date,
+               message_no,
+               sent_time,
+               transfer_type_id,
+               withdrawal_account_no,
+               deposit_bank_code,
+               deposit_account_no,
+               amount,
+               memo,
+               response_code,
+               balance_after
+        FROM transfer
+        WHERE company_no = #{companyNo}
+          AND sent_date = #{sentDate}
+          AND message_no = #{messageNo}
+    </select>
+
+    <insert id="insert">
+        INSERT INTO transfer (company_no, sent_date, message_no, sent_time, transfer_type_id,
+                              withdrawal_account_no, deposit_bank_code, deposit_account_no,
+                              amount, memo, response_code, balance_after)
+        VALUES (#{companyNo}, #{sentDate}, #{messageNo}, #{sentTime}, #{transferType},
+                #{withdrawalAccountNo}, #{depositBankCode}, #{depositAccountNo},
+                #{amount}, #{memo}, #{responseCode}, #{balanceAfter})
+    </insert>
+</mapper>
