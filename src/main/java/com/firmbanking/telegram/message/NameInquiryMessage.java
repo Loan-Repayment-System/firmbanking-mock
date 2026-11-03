@@ -37,6 +37,14 @@ public class NameInquiryMessage implements TelegramTransaction {
         if (!companyService.isRegistered(request.getCommonPart().getCompanyNo())) {
             return ResponseCode.UNREGISTERED_COMPANY;
         }
+        AccountNameResponse result = accountNameService.inquire(read(request));
+        if (result.getResponseCode() == ResponseCode.SUCCESS) {
+            write(response, result);
+        }
+        return result.getResponseCode();
+    }
+
+    private static InquireAccountNameRequest read(RequestTelegram request) {
         InquireAccountNameRequest inquiry = InquireAccountNameRequest.builder()
                 .bankCode(request.readN(NameInquiryField.BANK_CODE))
                 .accountNo(request.readAN(NameInquiryField.ACCOUNT_NO))
@@ -44,11 +52,10 @@ public class NameInquiryMessage implements TelegramTransaction {
                 .build();
         // 금액은 형식만 검사하고 쓰지 않는다.
         request.readAmount(NameInquiryField.AMOUNT);
+        return inquiry;
+    }
 
-        AccountNameResponse result = accountNameService.inquire(inquiry);
-        if (result.getResponseCode() == ResponseCode.SUCCESS) {
-            response.writeAN(NameInquiryField.HOLDER_NAME, result.getHolderName());
-        }
-        return result.getResponseCode();
+    private static void write(ResponseTelegram response, AccountNameResponse result) {
+        response.writeAN(NameInquiryField.HOLDER_NAME, result.getHolderName());
     }
 }
