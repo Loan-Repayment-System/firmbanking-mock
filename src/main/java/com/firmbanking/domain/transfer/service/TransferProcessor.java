@@ -35,16 +35,24 @@ public class TransferProcessor {
 
     @Transactional
     public TransferResultResponse process(ExecuteTransferRequest request) {
-        AccountDetailResponse withdrawal = accountMapper.findByBankCodeAndAccountNo(
-                request.getWithdrawalBankCode(), request.getWithdrawalAccountNo());
-        AccountDetailResponse deposit = accountMapper.findByBankCodeAndAccountNo(
-                request.getDepositBankCode(), request.getDepositAccountNo());
+        AccountDetailResponse withdrawal = findWithdrawalAccount(request);
+        AccountDetailResponse deposit = findDepositAccount(request);
         ResponseCode checked = check(request, withdrawal, deposit);
         if (checked != ResponseCode.SUCCESS) {
             return save(request, checked, null);
         }
         BigDecimal balanceAfter = moveBalance(request, withdrawal, deposit);
         return save(request, ResponseCode.SUCCESS, balanceAfter);
+    }
+
+    private AccountDetailResponse findWithdrawalAccount(ExecuteTransferRequest request) {
+        return accountMapper.findByBankCodeAndAccountNo(
+                request.getWithdrawalBankCode(), request.getWithdrawalAccountNo());
+    }
+
+    private AccountDetailResponse findDepositAccount(ExecuteTransferRequest request) {
+        return accountMapper.findByBankCodeAndAccountNo(
+                request.getDepositBankCode(), request.getDepositAccountNo());
     }
 
     /**
