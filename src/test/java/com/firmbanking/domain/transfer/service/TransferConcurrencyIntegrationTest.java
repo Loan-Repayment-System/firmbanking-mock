@@ -67,10 +67,19 @@ class TransferConcurrencyIntegrationTest {
         log.info("사라진 출금: {}원, {}건 (기대 잔액 {}, 실제 잔액 {})",
                 lostAmount, lostAmount.divide(amount), expectedBalance, balance);
 
-        assertThat(results).hasSize(requestCount)
-                .allSatisfy(result -> assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS));
+        assertThat(countSuccessResponses(results)).isEqualTo(requestCount);
         assertThat(countSuccessTransfers()).isEqualTo(requestCount);
         assertThat(balance).isGreaterThan(expectedBalance);
+    }
+
+    private static int countSuccessResponses(List<TransferResultResponse> results) {
+        int count = 0;
+        for (TransferResultResponse result : results) {
+            if (result.getResponseCode() == ResponseCode.SUCCESS) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private List<TransferResultResponse> transferConcurrently(int requestCount, BigDecimal amount) throws Exception {
