@@ -35,37 +35,66 @@ public class TransferProcessor {
 
     @Transactional
     public TransferResultResponse process(ExecuteTransferRequest request) {
-        AccountDetailResponse withdrawal = accountMapper.findByBankCodeAndAccountNo(
-                request.getWithdrawalBankCode(), request.getWithdrawalAccountNo());
-        if (withdrawal == null) {
-            return save(request, ResponseCode.WITHDRAWAL_ACCOUNT_NOT_FOUND, null);
-        }
-        AccountDetailResponse deposit = accountMapper.findByBankCodeAndAccountNo(
-                request.getDepositBankCode(), request.getDepositAccountNo());
-        if (deposit == null) {
-            return save(request, ResponseCode.DEPOSIT_ACCOUNT_NOT_FOUND, null);
-        }
-        ResponseCode checked = checkTransferType(request, withdrawal, deposit);
+        AccountDetailResponse withdrawal = findWithdrawalAccount(request);
+        AccountDetailResponse deposit = findDepositAccount(request);
+        ResponseCode checked = check(request, withdrawal, deposit);
         if (checked != ResponseCode.SUCCESS) {
             return save(request, checked, null);
         }
-        if (withdrawal.getBalance().compareTo(request.getAmount()) < 0) {
-            return save(request, ResponseCode.INSUFFICIENT_BALANCE, null);
+        BigDecimal balanceAfter = moveBalance(request, withdrawal, deposit);
+        return save(request, ResponseCode.SUCCESS, balanceAfter);
+    }
+
+    private AccountDetailResponse findWithdrawalAccount(ExecuteTransferRequest request) {
+        return accountMapper.findByBankCodeAndAccountNo(
+                request.getWithdrawalBankCode(), request.getWithdrawalAccountNo());
+    }
+
+    private AccountDetailResponse findDepositAccount(ExecuteTransferRequest request) {
+        return accountMapper.findByBankCodeAndAccountNo(
+                request.getDepositBankCode(), request.getDepositAccountNo());
+    }
+
+    /**
+     * 계좌 존재(B001·B002) → 거래별 검사(B004·C001) → 잔액(B003) 순서로 검사한다.
+     * 통과하면 SUCCESS다.
+     */
+    private ResponseCode check(ExecuteTransferRequest request, AccountDetailResponse withdrawal,
+                               AccountDetailResponse deposit) {
+        if (withdrawal == null) {
+            return ResponseCode.WITHDRAWAL_ACCOUNT_NOT_FOUND;
         }
+        if (deposit == null) {
+            return ResponseCode.DEPOSIT_ACCOUNT_NOT_FOUND;
+        }
+        ResponseCode checked = checkTransferType(request, withdrawal, deposit);
+        if (checked != ResponseCode.SUCCESS) {
+            return checked;
+        }
+        if (withdrawal.getBalance().compareTo(request.getAmount()) < 0) {
+            return ResponseCode.INSUFFICIENT_BALANCE;
+        }
+        return ResponseCode.SUCCESS;
+    }
+
+    /**
+     * 출금계좌에서 빼고 입금계좌에 더한 뒤 응답할 잔액을 돌려준다.
+     * 지급은 출금 후 지급 계좌 잔액, 집금은 입금 후 수납 계좌 잔액이다 (전문 명세 4.1·4.2절).
+     */
+    private BigDecimal moveBalance(ExecuteTransferRequest request, AccountDetailResponse withdrawal,
+                                   AccountDetailResponse deposit) {
         // 같은 계좌면 잔액이 그대로다. 따로 쓰면 입금이 조회한 잔액으로 출금을 덮어쓴다.
         if (withdrawal.getAccountId().equals(deposit.getAccountId())) {
-            return save(request, ResponseCode.SUCCESS, withdrawal.getBalance());
+            return withdrawal.getBalance();
         }
         BigDecimal withdrawalBalance = withdrawal.getBalance().subtract(request.getAmount());
         BigDecimal depositBalance = deposit.getBalance().add(request.getAmount());
         accountMapper.updateBalance(withdrawal.getAccountId(), withdrawalBalance);
         accountMapper.updateBalance(deposit.getAccountId(), depositBalance);
-        // 지급은 출금 후 지급 계좌 잔액, 집금은 입금 후 수납 계좌 잔액으로 응답한다 (전문 명세 4.1·4.2절).
-        BigDecimal balanceAfter = switch (request.getTransferType()) {
+        return switch (request.getTransferType()) {
             case PAYMENT -> withdrawalBalance;
             case COLLECTION -> depositBalance;
         };
-        return save(request, ResponseCode.SUCCESS, balanceAfter);
     }
 
     /**
