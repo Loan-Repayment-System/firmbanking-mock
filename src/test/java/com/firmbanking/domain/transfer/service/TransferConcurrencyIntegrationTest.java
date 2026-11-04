@@ -62,14 +62,22 @@ class TransferConcurrencyIntegrationTest {
         List<TransferResultResponse> results = transferConcurrently(requestCount, amount);
 
         // then
-        BigDecimal balance = accountMapper.findByBankCodeAndAccountNo(BANK_CODE, PAYMENT_ACCOUNT_NO).getBalance();
-        BigDecimal lostAmount = balance.subtract(expectedBalance);
-        log.info("사라진 출금: {}원, {}건 (기대 잔액 {}, 실제 잔액 {})",
-                lostAmount, lostAmount.divide(amount), expectedBalance, balance);
+        BigDecimal balance = findPaymentAccountBalance();
+        logLostTransfers(expectedBalance, balance, amount);
 
         assertThat(countSuccessResponses(results)).isEqualTo(requestCount);
         assertThat(countSuccessTransfers()).isEqualTo(requestCount);
         assertThat(balance).isGreaterThan(expectedBalance);
+    }
+
+    private BigDecimal findPaymentAccountBalance() {
+        return accountMapper.findByBankCodeAndAccountNo(BANK_CODE, PAYMENT_ACCOUNT_NO).getBalance();
+    }
+
+    private static void logLostTransfers(BigDecimal expectedBalance, BigDecimal balance, BigDecimal amount) {
+        BigDecimal lostAmount = balance.subtract(expectedBalance);
+        log.info("사라진 출금: {}원, {}건 (기대 잔액 {}, 실제 잔액 {})",
+                lostAmount, lostAmount.divide(amount), expectedBalance, balance);
     }
 
     private static int countSuccessResponses(List<TransferResultResponse> results) {
