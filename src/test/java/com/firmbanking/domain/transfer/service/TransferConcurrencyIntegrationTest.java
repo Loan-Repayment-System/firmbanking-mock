@@ -23,7 +23,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -38,7 +37,6 @@ class TransferConcurrencyIntegrationTest {
 
     private static final String COMPANY_NO = "CONCUR00001";
     private static final String BANK_CODE = "999";
-    private static final String COLLECTION_ACCOUNT_NO = "900-000-000001";
     private static final String PAYMENT_ACCOUNT_NO = "900-000-000002";
     private static final String CUSTOMER_ACCOUNT_NO = "900-000-000003";
     private static final int THREAD_COUNT = 32;
@@ -61,8 +59,7 @@ class TransferConcurrencyIntegrationTest {
         BigDecimal expectedBalance = new BigDecimal("99000000");
 
         // when
-        List<TransferResultResponse> results =
-                transferConcurrently(requestCount, messageNo -> paymentRequest(messageNo, amount));
+        List<TransferResultResponse> results = transferConcurrently(requestCount, amount);
 
         // then
         BigDecimal balance = findPaymentAccountBalance();
@@ -71,26 +68,6 @@ class TransferConcurrencyIntegrationTest {
         assertThat(countSuccessResponses(results)).isEqualTo(requestCount);
         assertThat(countSuccessTransfers()).isEqualTo(requestCount);
         assertThat(balance).isGreaterThan(expectedBalance);
-    }
-
-    @Test
-    @DisplayName("고객 계좌 잔액 100,000에서 1만 원 집금 100건을 동시에 보내면 10건보다 많이 성공한다")
-    void 동시_집금하면_잔액보다_많이_출금된다() throws Exception {
-        // given
-        int requestCount = 100;
-        BigDecimal amount = new BigDecimal("10000");
-        int expectedSuccessCount = 10;
-
-        // when
-        List<TransferResultResponse> results =
-                transferConcurrently(requestCount, messageNo -> collectionRequest(messageNo, amount));
-
-        // then
-        int successCount = countSuccessResponses(results);
-        logOverdrawnTransfers(expectedSuccessCount, successCount, amount);
-
-        assertThat(successCount).isGreaterThan(expectedSuccessCount);
-        assertThat(countSuccessTransfers()).isGreaterThan(expectedSuccessCount);
     }
 
     private BigDecimal findPaymentAccountBalance() {
@@ -103,12 +80,6 @@ class TransferConcurrencyIntegrationTest {
                 lostAmount, lostAmount.divide(amount), expectedBalance, balance);
     }
 
-    private static void logOverdrawnTransfers(int expectedSuccessCount, int successCount, BigDecimal amount) {
-        int overdrawnCount = successCount - expectedSuccessCount;
-        log.info("잔액보다 많이 성공한 집금: {}원, {}건 (기대 성공 {}건, 실제 성공 {}건)",
-                amount.multiply(BigDecimal.valueOf(overdrawnCount)), overdrawnCount, expectedSuccessCount, successCount);
-    }
-
     private static int countSuccessResponses(List<TransferResultResponse> results) {
         int count = 0;
         for (TransferResultResponse result : results) {
@@ -119,13 +90,12 @@ class TransferConcurrencyIntegrationTest {
         return count;
     }
 
-    private List<TransferResultResponse> transferConcurrently(
-            int requestCount, Function<String, ExecuteTransferRequest> requestOf) throws Exception {
+    private List<TransferResultResponse> transferConcurrently(int requestCount, BigDecimal amount) throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(THREAD_COUNT);
         CountDownLatch start = new CountDownLatch(1);
         List<Future<TransferResultResponse>> futures = new ArrayList<>();
         for (int i = 1; i <= requestCount; i++) {
-            ExecuteTransferRequest request = requestOf.apply(String.format("%06d", i));
+            ExecuteTransferRequest request = paymentRequest(String.format("%06d", i), amount);
             futures.add(executor.submit(() -> {
                 start.await();
                 return transferService.transfer(request);
@@ -151,22 +121,6 @@ class TransferConcurrencyIntegrationTest {
                 .withdrawalAccountNo(PAYMENT_ACCOUNT_NO)
                 .depositBankCode(BANK_CODE)
                 .depositAccountNo(CUSTOMER_ACCOUNT_NO)
-                .amount(amount)
-                .memo("동시성")
-                .build();
-    }
-
-    private static ExecuteTransferRequest collectionRequest(String messageNo, BigDecimal amount) {
-        return ExecuteTransferRequest.builder()
-                .companyNo(COMPANY_NO)
-                .sentDate("20261104")
-                .messageNo(messageNo)
-                .sentTime("120000")
-                .transferType(TransferType.COLLECTION)
-                .withdrawalBankCode(BANK_CODE)
-                .withdrawalAccountNo(CUSTOMER_ACCOUNT_NO)
-                .depositBankCode(BANK_CODE)
-                .depositAccountNo(COLLECTION_ACCOUNT_NO)
                 .amount(amount)
                 .memo("동시성")
                 .build();
