@@ -41,8 +41,10 @@ public class TransferProcessor {
         if (checked != ResponseCode.SUCCESS) {
             return save(request, checked, null);
         }
-        BigDecimal balanceAfter = moveBalance(request, withdrawal, deposit);
-        return save(request, ResponseCode.SUCCESS, balanceAfter);
+        if (!moveBalance(request, withdrawal, deposit)) {
+            return save(request, ResponseCode.INSUFFICIENT_BALANCE, null);
+        }
+        return save(request, ResponseCode.SUCCESS, findBalanceAfter(request));
     }
 
     private AccountDetailResponse findWithdrawalAccount(ExecuteTransferRequest request) {
@@ -56,8 +58,8 @@ public class TransferProcessor {
     }
 
     /**
-     * 계좌 존재(B001·B002) → 거래별 검사(B004·C001) → 잔액(B003) 순서로 검사한다.
-     * 통과하면 SUCCESS다.
+     * 계좌 존재(B001·B002) → 거래별 검사(B004·C001) 순서로 검사한다.
+     * 통과하면 SUCCESS다. 잔액(B003)은 출금 UPDATE가 판단한다.
      */
     private ResponseCode check(ExecuteTransferRequest request, AccountDetailResponse withdrawal,
                                AccountDetailResponse deposit) {
@@ -67,34 +69,32 @@ public class TransferProcessor {
         if (deposit == null) {
             return ResponseCode.DEPOSIT_ACCOUNT_NOT_FOUND;
         }
-        ResponseCode checked = checkTransferType(request, withdrawal, deposit);
-        if (checked != ResponseCode.SUCCESS) {
-            return checked;
-        }
-        if (withdrawal.getBalance().compareTo(request.getAmount()) < 0) {
-            return ResponseCode.INSUFFICIENT_BALANCE;
-        }
-        return ResponseCode.SUCCESS;
+        return checkTransferType(request, withdrawal, deposit);
     }
 
     /**
-     * 출금계좌에서 빼고 입금계좌에 더한 뒤 응답할 잔액을 돌려준다.
-     * 지급은 출금 후 지급 계좌 잔액, 집금은 입금 후 수납 계좌 잔액이다 (전문 명세 4.1·4.2절).
+     * 출금계좌에서 빼고 입금계좌에 더한다. 잔액은 조회한 값이 아니라 UPDATE 시점의 잔액으로 계산한다.
+     * 출금계좌 잔액이 금액보다 적어 출금하지 못하면 false다.
      */
-    private BigDecimal moveBalance(ExecuteTransferRequest request, AccountDetailResponse withdrawal,
-                                   AccountDetailResponse deposit) {
-        // 같은 계좌면 잔액이 그대로다. 따로 쓰면 입금이 조회한 잔액으로 출금을 덮어쓴다.
-        if (withdrawal.getAccountId().equals(deposit.getAccountId())) {
-            return withdrawal.getBalance();
+    private boolean moveBalance(ExecuteTransferRequest request, AccountDetailResponse withdrawal,
+                                AccountDetailResponse deposit) {
+        if (accountMapper.updateWithdrawal(withdrawal.getAccountId(), request.getAmount()) == 0) {
+            return false;
         }
-        BigDecimal withdrawalBalance = withdrawal.getBalance().subtract(request.getAmount());
-        BigDecimal depositBalance = deposit.getBalance().add(request.getAmount());
-        accountMapper.updateBalance(withdrawal.getAccountId(), withdrawalBalance);
-        accountMapper.updateBalance(deposit.getAccountId(), depositBalance);
-        return switch (request.getTransferType()) {
-            case PAYMENT -> withdrawalBalance;
-            case COLLECTION -> depositBalance;
+        accountMapper.updateDeposit(deposit.getAccountId(), request.getAmount());
+        return true;
+    }
+
+    /**
+     * 지급은 출금 후 지급 계좌 잔액, 집금은 입금 후 수납 계좌 잔액이다.
+     * 이 트랜잭션이 UPDATE한 행이라 다시 조회하면 바꾼 잔액이 나온다.
+     */
+    private BigDecimal findBalanceAfter(ExecuteTransferRequest request) {
+        AccountDetailResponse account = switch (request.getTransferType()) {
+            case PAYMENT -> findWithdrawalAccount(request);
+            case COLLECTION -> findDepositAccount(request);
         };
+        return account.getBalance();
     }
 
     /**
