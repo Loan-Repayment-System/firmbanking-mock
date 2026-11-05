@@ -19,4 +19,5 @@ public class AccountDetailResponse {
     private String holderName;
     private String holderBirthDate;
     private BigDecimal balance;
+    private Long version;
 }

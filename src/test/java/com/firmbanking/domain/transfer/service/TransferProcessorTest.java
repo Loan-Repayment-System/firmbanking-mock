@@ -18,10 +18,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.OptimisticLockingFailureException;
 
 import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
@@ -59,6 +61,7 @@ class TransferProcessorTest {
                 .collectionAccountId(COLLECTION_ACCOUNT_ID)
                 .paymentAccountId(PAYMENT_ACCOUNT_ID)
                 .build());
+        given(accountMapper.updateBalance(any(), any(), any())).willReturn(1);
     }
 
     @Nested
@@ -178,7 +181,7 @@ class TransferProcessorTest {
             // then
             assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
             assertThat(result.getBalanceAfter()).isEqualByComparingTo(BigDecimal.ZERO);
-            then(accountMapper).should().updateBalance(PAYMENT_ACCOUNT_ID, new BigDecimal("0"));
+            then(accountMapper).should().updateBalance(PAYMENT_ACCOUNT_ID, new BigDecimal("0"), 0L);
         }
 
         @Test
@@ -193,8 +196,8 @@ class TransferProcessorTest {
             // then
             assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
             assertThat(result.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("9999000000"));
-            then(accountMapper).should().updateBalance(PAYMENT_ACCOUNT_ID, new BigDecimal("9999000000"));
-            then(accountMapper).should().updateBalance(CUSTOMER_ACCOUNT_ID, new BigDecimal("11000000"));
+            then(accountMapper).should().updateBalance(PAYMENT_ACCOUNT_ID, new BigDecimal("9999000000"), 0L);
+            then(accountMapper).should().updateBalance(CUSTOMER_ACCOUNT_ID, new BigDecimal("11000000"), 0L);
             CreateTransferRequest saved = captureSaved();
             assertThat(saved.getCompanyNo()).isEqualTo(COMPANY_NO);
             assertThat(saved.getSentDate()).isEqualTo("20261029");
@@ -208,6 +211,42 @@ class TransferProcessorTest {
             assertThat(saved.getMemo()).isEqualTo("대출금");
             assertThat(saved.getResponseCode()).isEqualTo("0000");
             assertThat(saved.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("9999000000"));
+        }
+
+        @Nested
+        @DisplayName("조회한 뒤 다른 이체가 잔액을 먼저 바꿨을 때")
+        class Conflict {
+
+            @BeforeEach
+            void setUp() {
+                givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "10000000000");
+            }
+
+            @Test
+            @DisplayName("지급 계좌 updateBalance가 0행을 바꾸면 OptimisticLockingFailureException을 던지고 이체 결과를 저장하지 않는다")
+            void 출금계좌가_충돌하면_예외를_던진다() {
+                // given
+                given(accountMapper.updateBalance(PAYMENT_ACCOUNT_ID, new BigDecimal("9999000000"), 0L)).willReturn(0);
+
+                // when, then
+                assertThatThrownBy(() -> transferProcessor.process(request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO, "1000000")))
+                        .isInstanceOf(OptimisticLockingFailureException.class);
+                then(transferMapper).should(never()).insert(any());
+            }
+
+            // 출금 계좌는 이미 바뀌었으므로 예외로 트랜잭션 전체를 롤백해야 한다
+            @Test
+            @DisplayName("지급 계좌는 1행, 고객 계좌 updateBalance가 0행을 바꾸면 OptimisticLockingFailureException을 던지고 이체 결과를 저장하지 않는다")
+            void 입금계좌가_충돌하면_예외를_던진다() {
+                // given
+                given(accountMapper.updateBalance(CUSTOMER_ACCOUNT_ID, new BigDecimal("11000000"), 0L)).willReturn(0);
+
+                // when, then
+                assertThatThrownBy(() -> transferProcessor.process(request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO, "1000000")))
+                        .isInstanceOf(OptimisticLockingFailureException.class);
+                then(accountMapper).should().updateBalance(PAYMENT_ACCOUNT_ID, new BigDecimal("9999000000"), 0L);
+                then(transferMapper).should(never()).insert(any());
+            }
         }
     }
 
@@ -238,7 +277,7 @@ class TransferProcessorTest {
         // then
         assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
         assertThat(result.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("10000000000"));
-        then(accountMapper).should(never()).updateBalance(any(), any());
+        then(accountMapper).should(never()).updateBalance(any(), any(), any());
         CreateTransferRequest saved = captureSaved();
         assertThat(saved.getResponseCode()).isEqualTo("0000");
         assertThat(saved.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("10000000000"));
@@ -366,8 +405,8 @@ class TransferProcessorTest {
                     // then
                     assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
                     assertThat(result.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("1000000"));
-                    then(accountMapper).should().updateBalance(CUSTOMER_ACCOUNT_ID, new BigDecimal("9000000"));
-                    then(accountMapper).should().updateBalance(COLLECTION_ACCOUNT_ID, new BigDecimal("1000000"));
+                    then(accountMapper).should().updateBalance(CUSTOMER_ACCOUNT_ID, new BigDecimal("9000000"), 0L);
+                    then(accountMapper).should().updateBalance(COLLECTION_ACCOUNT_ID, new BigDecimal("1000000"), 0L);
                     CreateTransferRequest saved = captureSaved();
                     assertThat(saved.getTransferType()).isEqualTo(TransferType.COLLECTION);
                     assertThat(saved.getWithdrawalAccountNo()).isEqualTo(CUSTOMER_ACCOUNT_NO);
@@ -393,7 +432,7 @@ class TransferProcessorTest {
             // then
             assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
             assertThat(result.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("5000000"));
-            then(accountMapper).should(never()).updateBalance(any(), any());
+            then(accountMapper).should(never()).updateBalance(any(), any(), any());
             assertThat(captureSaved().getBalanceAfter()).isEqualByComparingTo(new BigDecimal("5000000"));
         }
     }
@@ -405,6 +444,7 @@ class TransferProcessorTest {
                 .accountNo(accountNo)
                 .holderName("예금주")
                 .balance(new BigDecimal(balance))
+                .version(0L)
                 .build());
     }
 
@@ -423,7 +463,7 @@ class TransferProcessorTest {
     private void assertRejected(TransferResultResponse result, ResponseCode responseCode) {
         assertThat(result.getResponseCode()).isEqualTo(responseCode);
         assertThat(result.getBalanceAfter()).isNull();
-        then(accountMapper).should(never()).updateBalance(any(), any());
+        then(accountMapper).should(never()).updateBalance(any(), any(), any());
         CreateTransferRequest saved = captureSaved();
         assertThat(saved.getResponseCode()).isEqualTo(responseCode.getCode());
         assertThat(saved.getBalanceAfter()).isNull();

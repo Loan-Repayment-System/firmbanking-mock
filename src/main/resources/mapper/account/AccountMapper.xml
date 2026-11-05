@@ -8,7 +8,8 @@
                account_no,
                holder_name,
                holder_birth_date,
-               balance
+               balance,
+               version
         FROM account
         WHERE bank_code = #{bankCode}
           AND account_no = #{accountNo}
@@ -16,7 +17,9 @@
 
     <update id="updateBalance">
         UPDATE account
-        SET balance = #{balance}
+        SET balance = #{balance},
+            version = version + 1
         WHERE account_id = #{accountId}
+          AND version = #{version}
     </update>
 </mapper>
