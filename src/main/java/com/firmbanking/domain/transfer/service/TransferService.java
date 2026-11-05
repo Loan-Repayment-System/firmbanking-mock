@@ -30,7 +30,7 @@ public class TransferService {
             return resultOf(saved, request);
         }
         try {
-            // 프록시 호출 전체를 감싸야 트랜잭션 시작부터 커밋까지가 잠금 안에 들어간다.
+            // 프록시의 process를 잠금 구간 안에서 호출해야 트랜잭션 시작부터 커밋까지가 잠금 구간에 포함된다.
             synchronized (lock) {
                 return transferProcessor.process(request);
             }
