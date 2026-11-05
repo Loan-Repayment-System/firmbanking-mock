@@ -41,8 +41,8 @@ class AccountLockIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("아무도 잠그지 않은 지급 계좌와 고객 계좌로 실행하면 작업 결과를 돌려주고 끝난 뒤 두 잠금이 풀려 있다")
-    void 작업_결과를_돌려주고_잠금을_푼다() {
+    @DisplayName("아무도 잠그지 않은 지급 계좌와 고객 계좌로 실행하면 작업 결과를 돌려주고 끝난 뒤 두 잠금이 해제되어 있다")
+    void 작업_결과를_돌려주고_잠금을_해제한다() {
         // when
         String result = accountLock.execute(request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO), () -> "결과");
 
@@ -53,8 +53,8 @@ class AccountLockIntegrationTest {
     }
 
     @Test
-    @DisplayName("작업이 IllegalStateException을 던지면 그 예외가 그대로 나가고 두 잠금이 풀려 있다")
-    void 작업이_실패해도_잠금을_푼다() {
+    @DisplayName("작업이 IllegalStateException을 던지면 그 예외가 그대로 나가고 두 잠금이 해제되어 있다")
+    void 작업이_실패해도_잠금을_해제한다() {
         // when, then
         assertThatThrownBy(() -> accountLock.execute(request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO), () -> {
             throw new IllegalStateException("작업 실패");
@@ -63,10 +63,10 @@ class AccountLockIntegrationTest {
         assertThat(isFreeLock(CUSTOMER_KEY)).isTrue();
     }
 
-    // 같은 키를 두 번 잡고 한 번만 풀면 잠금이 남는다
+    // 같은 키를 두 번 획득하고 한 번만 해제하면 잠금이 남는다
     @Test
-    @DisplayName("출금계좌와 입금계좌가 같으면 작업을 실행하고 끝난 뒤 잠금이 풀려 있다")
-    void 같은_계좌면_한_번만_잠근다() {
+    @DisplayName("출금계좌와 입금계좌가 같으면 작업을 실행하고 끝난 뒤 잠금이 해제되어 있다")
+    void 같은_계좌면_한_번만_획득한다() {
         // given
         AtomicBoolean executed = new AtomicBoolean();
 
@@ -79,7 +79,7 @@ class AccountLockIntegrationTest {
     }
 
     @Test
-    @DisplayName("다른 커넥션이 지급 계좌 잠금을 쥐고 있으면 10초 뒤 CannotAcquireLockException을 던지고 작업을 실행하지 않는다")
+    @DisplayName("다른 커넥션이 지급 계좌 잠금을 보유하고 있으면 10초 뒤 CannotAcquireLockException을 던지고 작업을 실행하지 않는다")
     void 잠금을_얻지_못하면_실행하지_않는다() throws Exception {
         // given
         AtomicBoolean executed = new AtomicBoolean();

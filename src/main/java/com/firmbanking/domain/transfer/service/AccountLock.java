@@ -20,8 +20,8 @@ import java.util.TreeSet;
 import java.util.function.Supplier;
 
 /**
- * 출금계좌와 입금계좌에 MySQL Named Lock(GET_LOCK)을 걸고 작업을 실행한 뒤 푼다.
- * GET_LOCK은 트랜잭션이 아니라 커넥션에 걸리므로, 같은 커넥션을 작업이 끝날 때까지 쥐고 그 커넥션에서 푼다.
+ * 출금계좌와 입금계좌에 MySQL Named Lock(GET_LOCK)을 획득하고 작업을 실행한 뒤 잠금을 해제한다.
+ * GET_LOCK은 트랜잭션이 아니라 커넥션에 걸리므로, 같은 커넥션을 작업이 끝날 때까지 보유하고 그 커넥션에서 해제한다.
  * 잠금을 기다리는 요청이 이체 트랜잭션의 커넥션을 차지하지 않게 이체용 풀과 따로 둔 잠금 전용 풀을 쓴다.
  */
 @Component
@@ -45,7 +45,7 @@ public class AccountLock {
     }
 
     /**
-     * 두 계좌의 잠금을 키 순서로 잡아 데드락을 막는다. 같은 계좌면 하나만 잡는다.
+     * 두 계좌의 잠금을 키 순서로 획득해 데드락을 막는다. 같은 계좌면 하나만 획득한다.
      * 10초 안에 잠금을 얻지 못하면 작업을 실행하지 않고 CannotAcquireLockException을 던진다.
      */
     public <T> T execute(ExecuteTransferRequest request, Supplier<T> action) {
