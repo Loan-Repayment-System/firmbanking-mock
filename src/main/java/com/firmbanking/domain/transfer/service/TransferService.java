@@ -14,6 +14,7 @@ import java.util.Objects;
 /**
  * 이체. 같은 거래고유번호의 이체 결과가 있으면 처리하지 않고 저장된 결과로 응답한다 (프로그램 설계 2절).
  * 키 중복 예외는 TransferProcessor의 트랜잭션이 롤백된 뒤에 잡아야 하므로 트랜잭션 밖에 둔다.
+ * 계좌 잠금도 트랜잭션이 커밋된 뒤에 풀어야 하므로 트랜잭션 밖에서 잡는다.
  */
 @Service
 @RequiredArgsConstructor
@@ -21,6 +22,7 @@ public class TransferService {
 
     private final TransferMapper transferMapper;
     private final TransferProcessor transferProcessor;
+    private final AccountLock accountLock;
 
     public TransferResultResponse transfer(ExecuteTransferRequest request) {
         TransferDetailResponse saved = findSaved(request);
@@ -28,7 +30,7 @@ public class TransferService {
             return resultOf(saved, request);
         }
         try {
-            return transferProcessor.process(request);
+            return accountLock.execute(request, () -> transferProcessor.process(request));
         } catch (DuplicateKeyException e) {
             // 같은 거래고유번호가 동시에 들어와 다른 쪽이 먼저 저장했다. 이쪽 출금은 롤백됐다.
             return resultOf(findSaved(request), request);
