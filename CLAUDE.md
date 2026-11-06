@@ -144,13 +144,14 @@ src/main/resources/mapper/{도메인}/{대상}Mapper.xml
 ## 9. 날짜 · 시간
 
 - 타임존은 DB, JDBC, JVM 세 곳에서 `Asia/Seoul`로 맞춘다.
-- JVM 옵션(`-Duser.timezone=Asia/Seoul`)은 `build.gradle`의 `bootRun`, `test`에만 걸려 있다. `java -jar`나 운영 배포에도 넣는다.
+- JVM 옵션(`-Duser.timezone=Asia/Seoul`)은 `build.gradle`의 `bootRun`, `test`와 `Dockerfile`의 `ENTRYPOINT`에 걸려 있다. 다른 방법으로 `java -jar`를 실행할 때도 넣는다.
 
 ---
 
 ## 10. 환경 설정
 
-- 프로필은 `local`(기본)과 `test`가 있다. `test`는 통합 테스트용이다.
+- 프로필은 `local`(기본), `test`, `load`가 있다. `test`는 통합 테스트용이다.
+- `load`는 부하 측정용이다. Docker 이미지로 띄우고 DB 호스트를 `MYSQL_HOST`로 받으며, 로컬 테스트 고객 계좌 시드를 넣지 않는다.
 - 로컬 포트나 계정을 바꿀 때는 `.env`만 고친다. docker compose와 Spring이 같은 `.env`를 읽는다.
 - 비밀값은 커밋하는 파일에 넣지 않는다. `.env`는 커밋하지 않고, `.env.sample`에는 로컬용 값만 둔다.
 
