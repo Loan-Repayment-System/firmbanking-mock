@@ -14,13 +14,14 @@ import com.firmbanking.global.code.ConsentStatus;
 import com.firmbanking.global.code.ResponseCode;
 import com.firmbanking.global.code.TransferType;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 
 /**
- * 이체 처리 흐름 3~6단계를 한 트랜잭션으로 처리한다 (프로그램 설계 1절).
+ * 계좌 조회 → 검사 → 잔액 변경 → 이체 결과 저장을 한 트랜잭션으로 처리한다.
  * 거절도 잔액은 바꾸지 않고 이체 결과를 저장한다.
  * 지급과 집금은 거래별 검사와 응답 잔액만 다르다.
  */
@@ -79,7 +80,8 @@ public class TransferProcessor {
 
     /**
      * 출금계좌에서 빼고 입금계좌에 더한 뒤 응답할 잔액을 돌려준다.
-     * 지급은 출금 후 지급 계좌 잔액, 집금은 입금 후 수납 계좌 잔액이다 (전문 명세 4.1·4.2절).
+     * 지급은 출금 후 지급 계좌 잔액, 집금은 입금 후 수납 계좌 잔액이다.
+     * 조회한 뒤 다른 이체가 잔액을 바꿨으면 OptimisticLockingFailureException을 던져 트랜잭션을 롤백한다.
      */
     private BigDecimal moveBalance(ExecuteTransferRequest request, AccountDetailResponse withdrawal,
                                    AccountDetailResponse deposit) {
@@ -89,12 +91,19 @@ public class TransferProcessor {
         }
         BigDecimal withdrawalBalance = withdrawal.getBalance().subtract(request.getAmount());
         BigDecimal depositBalance = deposit.getBalance().add(request.getAmount());
-        accountMapper.updateBalance(withdrawal.getAccountId(), withdrawalBalance);
-        accountMapper.updateBalance(deposit.getAccountId(), depositBalance);
+        updateBalance(withdrawal, withdrawalBalance);
+        updateBalance(deposit, depositBalance);
         return switch (request.getTransferType()) {
             case PAYMENT -> withdrawalBalance;
             case COLLECTION -> depositBalance;
         };
+    }
+
+    private void updateBalance(AccountDetailResponse account, BigDecimal balance) {
+        int updated = accountMapper.updateBalance(account.getAccountId(), balance, account.getVersion());
+        if (updated == 0) {
+            throw new OptimisticLockingFailureException("계좌 " + account.getAccountId() + "의 version이 조회 후 바뀌었다");
+        }
     }
 
     /**
