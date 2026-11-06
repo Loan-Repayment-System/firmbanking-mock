@@ -106,8 +106,8 @@ function number(value, length) {
 }
 
 /**
- * 전문 하나를 보내고 응답코드를 돌려준다. 거래마다 연결을 새로 열고, 서버가 응답을 쓴 뒤 연결을 닫는다.
- * 응답을 다 받지 못하면 'NONE'이다.
+ * 전문 하나를 보내고 응답 시간과 성공 여부를 지표로 기록한다. 거래마다 연결을 새로 열고, 서버가 응답을 쓴 뒤 연결을 닫는다.
+ * 응답을 다 받지 못하면 실패로 기록한다.
  */
 export async function send(host, port, body, transaction, isTransfer) {
   const message = new Uint8Array(MESSAGE_LENGTH);
@@ -168,5 +168,4 @@ export async function send(host, port, body, transaction, isTransfer) {
   if (isTransfer && code === SUCCESS) {
     transferSuccess.add(1, tags);
   }
-  return code;
 }
