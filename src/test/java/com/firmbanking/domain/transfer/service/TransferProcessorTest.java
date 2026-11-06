@@ -23,6 +23,7 @@ import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
@@ -154,38 +155,25 @@ class TransferProcessorTest {
 
         // 전문 명세 5절 B003: 출금계좌 잔액이 출금금액보다 적음
         @Test
-        @DisplayName("지급 계좌 잔액 1,000,000에서 2,000,000을 지급하면 B003을 돌려주고 잔액을 바꾸지 않으며 B003 / 잔액 null로 저장한다")
-        void 잔액이_모자라면_B003이다() {
+        @DisplayName("지급 계좌 잔액이 모자라 출금 UPDATE가 0행이면 B003을 돌려주고 입금하지 않으며 B003 / 잔액 null로 저장한다")
+        void 출금하지_못하면_B003이다() {
             // given
             givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "1000000");
+            givenWithdrawn(PAYMENT_ACCOUNT_ID, 0);
 
             // when
             TransferResultResponse result = transferProcessor.process(request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO, "2000000"));
 
             // then
-            assertRejected(result, ResponseCode.INSUFFICIENT_BALANCE);
+            assertInsufficientBalance(result);
         }
 
         @Test
-        @DisplayName("지급 계좌 잔액 1,000,000에서 1,000,000을 지급하면 0000 / 잔액 0이다")
-        void 잔액과_같으면_0000이다() {
-            // given
-            givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "1000000");
-
-            // when
-            TransferResultResponse result = transferProcessor.process(request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO, "1000000"));
-
-            // then
-            assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
-            assertThat(result.getBalanceAfter()).isEqualByComparingTo(BigDecimal.ZERO);
-            then(accountMapper).should().updateBalance(PAYMENT_ACCOUNT_ID, new BigDecimal("0"));
-        }
-
-        @Test
-        @DisplayName("지급 계좌 잔액 10,000,000,000에서 1,000,000을 지급하면 지급 계좌 9,999,000,000, 고객 계좌 11,000,000으로 바꾸고 0000 / 9,999,000,000으로 저장한다")
+        @DisplayName("지급 계좌에서 1,000,000을 출금하고 고객 계좌에 입금하면 다시 조회한 지급 계좌 잔액 9,999,000,000으로 0000 / 9,999,000,000을 저장한다")
         void 출금하고_입금한다() {
             // given
-            givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "10000000000");
+            givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "10000000000", "9999000000");
+            givenWithdrawn(PAYMENT_ACCOUNT_ID, 1);
 
             // when
             TransferResultResponse result = transferProcessor.process(request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO, "1000000"));
@@ -193,8 +181,8 @@ class TransferProcessorTest {
             // then
             assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
             assertThat(result.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("9999000000"));
-            then(accountMapper).should().updateBalance(PAYMENT_ACCOUNT_ID, new BigDecimal("9999000000"));
-            then(accountMapper).should().updateBalance(CUSTOMER_ACCOUNT_ID, new BigDecimal("11000000"));
+            then(accountMapper).should().updateWithdrawal(PAYMENT_ACCOUNT_ID, new BigDecimal("1000000"));
+            then(accountMapper).should().updateDeposit(CUSTOMER_ACCOUNT_ID, new BigDecimal("1000000"));
             CreateTransferRequest saved = captureSaved();
             assertThat(saved.getCompanyNo()).isEqualTo(COMPANY_NO);
             assertThat(saved.getSentDate()).isEqualTo("20261029");
@@ -225,12 +213,12 @@ class TransferProcessorTest {
         then(withdrawalConsentMapper).shouldHaveNoInteractions();
     }
 
-    // 따로 쓰면 입금이 조회한 잔액으로 출금을 덮어써 돈이 생긴다
     @Test
-    @DisplayName("입금계좌가 지급 계좌 자신이면 잔액을 바꾸지 않고 0000 / 10,000,000,000으로 저장한다")
-    void 같은_계좌면_잔액을_바꾸지_않는다() {
+    @DisplayName("입금계좌가 지급 계좌 자신이면 같은 계좌에서 출금하고 입금해 다시 조회한 잔액 10,000,000,000으로 0000 / 10,000,000,000을 저장한다")
+    void 같은_계좌면_출금하고_입금한다() {
         // given
         givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "10000000000");
+        givenWithdrawn(PAYMENT_ACCOUNT_ID, 1);
 
         // when
         TransferResultResponse result = transferProcessor.process(request(PAYMENT_ACCOUNT_NO, PAYMENT_ACCOUNT_NO, "1000000"));
@@ -238,7 +226,8 @@ class TransferProcessorTest {
         // then
         assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
         assertThat(result.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("10000000000"));
-        then(accountMapper).should(never()).updateBalance(any(), any());
+        then(accountMapper).should().updateWithdrawal(PAYMENT_ACCOUNT_ID, new BigDecimal("1000000"));
+        then(accountMapper).should().updateDeposit(PAYMENT_ACCOUNT_ID, new BigDecimal("1000000"));
         CreateTransferRequest saved = captureSaved();
         assertThat(saved.getResponseCode()).isEqualTo("0000");
         assertThat(saved.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("10000000000"));
@@ -345,20 +334,27 @@ class TransferProcessorTest {
 
                 // 전문 명세 5절 B003: 출금계좌 잔액이 출금금액보다 적음
                 @Test
-                @DisplayName("20,000,000을 집금하면 B003을 돌려주고 잔액을 바꾸지 않으며 B003 / 잔액 null로 저장한다")
-                void 잔액이_모자라면_B003이다() {
+                @DisplayName("고객 계좌 잔액이 모자라 출금 UPDATE가 0행이면 B003을 돌려주고 입금하지 않으며 B003 / 잔액 null로 저장한다")
+                void 출금하지_못하면_B003이다() {
+                    // given
+                    givenWithdrawn(CUSTOMER_ACCOUNT_ID, 0);
+
                     // when
                     TransferResultResponse result = transferProcessor.process(
                             collection(CUSTOMER_ACCOUNT_NO, COLLECTION_ACCOUNT_NO, "20000000"));
 
                     // then
-                    assertRejected(result, ResponseCode.INSUFFICIENT_BALANCE);
+                    assertInsufficientBalance(result);
                 }
 
                 // 전문 명세 4.2절: 입금후잔액은 입금 후 캐피탈 수납 계좌 잔액
                 @Test
-                @DisplayName("1,000,000을 집금하면 고객 계좌 9,000,000, 수납 계좌 1,000,000으로 바꾸고 집금 / 0000 / 1,000,000으로 저장한다")
+                @DisplayName("고객 계좌에서 1,000,000을 출금하고 수납 계좌에 입금하면 다시 조회한 수납 계좌 잔액 1,000,000으로 집금 / 0000 / 1,000,000을 저장한다")
                 void 출금하고_입금한다() {
+                    // given
+                    givenAccount(COLLECTION_ACCOUNT_ID, COLLECTION_ACCOUNT_NO, "0", "1000000");
+                    givenWithdrawn(CUSTOMER_ACCOUNT_ID, 1);
+
                     // when
                     TransferResultResponse result = transferProcessor.process(
                             collection(CUSTOMER_ACCOUNT_NO, COLLECTION_ACCOUNT_NO, "1000000"));
@@ -366,8 +362,8 @@ class TransferProcessorTest {
                     // then
                     assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
                     assertThat(result.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("1000000"));
-                    then(accountMapper).should().updateBalance(CUSTOMER_ACCOUNT_ID, new BigDecimal("9000000"));
-                    then(accountMapper).should().updateBalance(COLLECTION_ACCOUNT_ID, new BigDecimal("1000000"));
+                    then(accountMapper).should().updateWithdrawal(CUSTOMER_ACCOUNT_ID, new BigDecimal("1000000"));
+                    then(accountMapper).should().updateDeposit(COLLECTION_ACCOUNT_ID, new BigDecimal("1000000"));
                     CreateTransferRequest saved = captureSaved();
                     assertThat(saved.getTransferType()).isEqualTo(TransferType.COLLECTION);
                     assertThat(saved.getWithdrawalAccountNo()).isEqualTo(CUSTOMER_ACCOUNT_NO);
@@ -378,13 +374,13 @@ class TransferProcessorTest {
             }
         }
 
-        // 따로 쓰면 입금이 조회한 잔액으로 출금을 덮어써 돈이 생긴다
         @Test
-        @DisplayName("출금계좌가 출금 동의한 수납 계좌 자신(잔액 5,000,000)이면 잔액을 바꾸지 않고 0000 / 5,000,000으로 저장한다")
-        void 같은_계좌면_잔액을_바꾸지_않는다() {
+        @DisplayName("출금계좌가 출금 동의한 수납 계좌 자신이면 같은 계좌에서 출금하고 입금해 다시 조회한 잔액 5,000,000으로 0000 / 5,000,000을 저장한다")
+        void 같은_계좌면_출금하고_입금한다() {
             // given
             givenAccount(COLLECTION_ACCOUNT_ID, COLLECTION_ACCOUNT_NO, "5000000");
             givenConsent(COLLECTION_ACCOUNT_ID, ConsentStatus.REGISTERED);
+            givenWithdrawn(COLLECTION_ACCOUNT_ID, 1);
 
             // when
             TransferResultResponse result = transferProcessor.process(
@@ -393,19 +389,36 @@ class TransferProcessorTest {
             // then
             assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
             assertThat(result.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("5000000"));
-            then(accountMapper).should(never()).updateBalance(any(), any());
+            then(accountMapper).should().updateWithdrawal(COLLECTION_ACCOUNT_ID, new BigDecimal("1000000"));
+            then(accountMapper).should().updateDeposit(COLLECTION_ACCOUNT_ID, new BigDecimal("1000000"));
             assertThat(captureSaved().getBalanceAfter()).isEqualByComparingTo(new BigDecimal("5000000"));
         }
     }
 
     private void givenAccount(Long accountId, String accountNo, String balance) {
-        given(accountMapper.findByBankCodeAndAccountNo(BANK_CODE, accountNo)).willReturn(AccountDetailResponse.builder()
+        given(accountMapper.findByBankCodeAndAccountNo(BANK_CODE, accountNo)).willReturn(account(accountId, accountNo, balance));
+    }
+
+    /**
+     * 처음 조회하면 balance, UPDATE 뒤 다시 조회하면 balanceAfterUpdate다.
+     */
+    private void givenAccount(Long accountId, String accountNo, String balance, String balanceAfterUpdate) {
+        given(accountMapper.findByBankCodeAndAccountNo(BANK_CODE, accountNo)).willReturn(
+                account(accountId, accountNo, balance), account(accountId, accountNo, balanceAfterUpdate));
+    }
+
+    private static AccountDetailResponse account(Long accountId, String accountNo, String balance) {
+        return AccountDetailResponse.builder()
                 .accountId(accountId)
                 .bankCode(BANK_CODE)
                 .accountNo(accountNo)
                 .holderName("예금주")
                 .balance(new BigDecimal(balance))
-                .build());
+                .build();
+    }
+
+    private void givenWithdrawn(Long accountId, int updatedRows) {
+        given(accountMapper.updateWithdrawal(eq(accountId), any())).willReturn(updatedRows);
     }
 
     private void givenConsent(Long accountId, ConsentStatus status) {
@@ -423,9 +436,19 @@ class TransferProcessorTest {
     private void assertRejected(TransferResultResponse result, ResponseCode responseCode) {
         assertThat(result.getResponseCode()).isEqualTo(responseCode);
         assertThat(result.getBalanceAfter()).isNull();
-        then(accountMapper).should(never()).updateBalance(any(), any());
+        then(accountMapper).should(never()).updateWithdrawal(any(), any());
+        then(accountMapper).should(never()).updateDeposit(any(), any());
         CreateTransferRequest saved = captureSaved();
         assertThat(saved.getResponseCode()).isEqualTo(responseCode.getCode());
+        assertThat(saved.getBalanceAfter()).isNull();
+    }
+
+    private void assertInsufficientBalance(TransferResultResponse result) {
+        assertThat(result.getResponseCode()).isEqualTo(ResponseCode.INSUFFICIENT_BALANCE);
+        assertThat(result.getBalanceAfter()).isNull();
+        then(accountMapper).should(never()).updateDeposit(any(), any());
+        CreateTransferRequest saved = captureSaved();
+        assertThat(saved.getResponseCode()).isEqualTo(ResponseCode.INSUFFICIENT_BALANCE.getCode());
         assertThat(saved.getBalanceAfter()).isNull();
     }
 

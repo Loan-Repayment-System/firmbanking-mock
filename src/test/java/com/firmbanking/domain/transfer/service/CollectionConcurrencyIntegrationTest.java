@@ -1,11 +1,11 @@
 package com.firmbanking.domain.transfer.service;
 
 import com.firmbanking.TestcontainersConfig;
+import com.firmbanking.domain.account.mapper.AccountMapper;
 import com.firmbanking.domain.transfer.dto.request.ExecuteTransferRequest;
 import com.firmbanking.domain.transfer.dto.response.TransferResultResponse;
 import com.firmbanking.global.code.ResponseCode;
 import com.firmbanking.global.code.TransferType;
-import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +25,6 @@ import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@Slf4j
 @SpringBootTest
 @Import(TestcontainersConfig.class)
 @ActiveProfiles("test")
@@ -44,41 +43,41 @@ class CollectionConcurrencyIntegrationTest {
     private TransferService transferService;
 
     @Autowired
+    private AccountMapper accountMapper;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("고객 계좌 잔액 100,000에서 1만 원 집금 100건을 동시에 보내면 10건보다 많이 성공한다")
-    void 동시_집금하면_잔액보다_많이_출금된다() throws Exception {
+    @DisplayName("고객 계좌 잔액 100,000에서 1만 원 집금 100건을 동시에 보내면 10건만 성공하고 90건은 잔액부족으로 거절된다")
+    void 동시_집금해도_잔액보다_많이_출금되지_않는다() throws Exception {
         // given
         int requestCount = 100;
         BigDecimal amount = new BigDecimal("10000");
-        int expectedSuccessCount = 10;
 
         // when
         List<TransferResultResponse> results = collectConcurrently(requestCount, amount);
 
         // then
-        int successCount = countSuccessResponses(results);
-        logOverdrawnTransfers(expectedSuccessCount, successCount, amount);
-
-        assertThat(successCount).isGreaterThan(expectedSuccessCount);
-        assertThat(countSuccessTransfers()).isGreaterThan(expectedSuccessCount);
+        assertThat(countResponses(results, ResponseCode.SUCCESS)).isEqualTo(10);
+        assertThat(countResponses(results, ResponseCode.INSUFFICIENT_BALANCE)).isEqualTo(90);
+        assertThat(countSuccessTransfers()).isEqualTo(10);
+        assertThat(findBalance(CUSTOMER_ACCOUNT_NO)).isEqualByComparingTo("0");
+        assertThat(findBalance(COLLECTION_ACCOUNT_NO)).isEqualByComparingTo("100000");
     }
 
-    private static void logOverdrawnTransfers(int expectedSuccessCount, int successCount, BigDecimal amount) {
-        int overdrawnCount = successCount - expectedSuccessCount;
-        log.info("잔액보다 많이 성공한 집금: {}원, {}건 (기대 성공 {}건, 실제 성공 {}건)",
-                amount.multiply(BigDecimal.valueOf(overdrawnCount)), overdrawnCount, expectedSuccessCount, successCount);
-    }
-
-    private static int countSuccessResponses(List<TransferResultResponse> results) {
+    private static int countResponses(List<TransferResultResponse> results, ResponseCode responseCode) {
         int count = 0;
         for (TransferResultResponse result : results) {
-            if (result.getResponseCode() == ResponseCode.SUCCESS) {
+            if (result.getResponseCode() == responseCode) {
                 count++;
             }
         }
         return count;
+    }
+
+    private BigDecimal findBalance(String accountNo) {
+        return accountMapper.findByBankCodeAndAccountNo(BANK_CODE, accountNo).getBalance();
     }
 
     private List<TransferResultResponse> collectConcurrently(int requestCount, BigDecimal amount) throws Exception {

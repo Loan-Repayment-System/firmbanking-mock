@@ -2,6 +2,7 @@ package com.firmbanking.domain.account.mapper;
 
 import com.firmbanking.TestcontainersConfig;
 import com.firmbanking.domain.account.dto.response.AccountDetailResponse;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -58,22 +59,67 @@ class AccountMapperIntegrationTest {
         }
     }
 
-    @Test
+    @Nested
     @Transactional
-    @DisplayName("잔액 10,000,000인 고객 계좌를 11,000,000으로 updateBalance하면 조회한 잔액이 11,000,000이다")
-    void 잔액을_바꾼다() {
-        // given
-        jdbcTemplate.update("""
-                INSERT INTO account (bank_code, account_no, holder_name, holder_birth_date, balance)
-                VALUES ('999', '200-000-000001', '김철수', '900101', 10000000)
-                """);
-        Long accountId = accountMapper.findByBankCodeAndAccountNo("999", "200-000-000001").getAccountId();
+    @DisplayName("잔액 10,000,000인 고객 계좌가 있을 때")
+    class CustomerAccount {
 
-        // when
-        accountMapper.updateBalance(accountId, new BigDecimal("11000000"));
+        private Long accountId;
 
-        // then
-        assertThat(accountMapper.findByBankCodeAndAccountNo("999", "200-000-000001").getBalance())
-                .isEqualByComparingTo(new BigDecimal("11000000"));
+        @BeforeEach
+        void setUp() {
+            jdbcTemplate.update("""
+                    INSERT INTO account (bank_code, account_no, holder_name, holder_birth_date, balance)
+                    VALUES ('999', '200-000-000001', '김철수', '900101', 10000000)
+                    """);
+            accountId = accountMapper.findByBankCodeAndAccountNo("999", "200-000-000001").getAccountId();
+        }
+
+        @Test
+        @DisplayName("1,000,000을 updateWithdrawal하면 바뀐 행이 1이고 잔액이 9,000,000이다")
+        void 잔액이_충분하면_출금한다() {
+            // when
+            int updatedRows = accountMapper.updateWithdrawal(accountId, new BigDecimal("1000000"));
+
+            // then
+            assertThat(updatedRows).isEqualTo(1);
+            assertThat(findBalance()).isEqualByComparingTo(new BigDecimal("9000000"));
+        }
+
+        @Test
+        @DisplayName("잔액과 같은 10,000,000을 updateWithdrawal하면 바뀐 행이 1이고 잔액이 0이다")
+        void 잔액과_같으면_출금한다() {
+            // when
+            int updatedRows = accountMapper.updateWithdrawal(accountId, new BigDecimal("10000000"));
+
+            // then
+            assertThat(updatedRows).isEqualTo(1);
+            assertThat(findBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+        }
+
+        @Test
+        @DisplayName("잔액보다 많은 11,000,000을 updateWithdrawal하면 바뀐 행이 0이고 잔액이 10,000,000 그대로다")
+        void 잔액이_모자라면_출금하지_않는다() {
+            // when
+            int updatedRows = accountMapper.updateWithdrawal(accountId, new BigDecimal("11000000"));
+
+            // then
+            assertThat(updatedRows).isZero();
+            assertThat(findBalance()).isEqualByComparingTo(new BigDecimal("10000000"));
+        }
+
+        @Test
+        @DisplayName("1,000,000을 updateDeposit하면 잔액이 11,000,000이다")
+        void 입금한다() {
+            // when
+            accountMapper.updateDeposit(accountId, new BigDecimal("1000000"));
+
+            // then
+            assertThat(findBalance()).isEqualByComparingTo(new BigDecimal("11000000"));
+        }
+
+        private BigDecimal findBalance() {
+            return accountMapper.findByBankCodeAndAccountNo("999", "200-000-000001").getBalance();
+        }
     }
 }
