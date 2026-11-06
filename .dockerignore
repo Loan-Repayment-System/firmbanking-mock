@@ -7,3 +7,4 @@ out/
 .env
 .git/
 .claude/
+load-test/
