@@ -399,7 +399,7 @@ class TransferProcessorTest {
     }
 
     private void givenAccount(Long accountId, String accountNo, String balance) {
-        given(accountMapper.findByBankCodeAndAccountNo(BANK_CODE, accountNo)).willReturn(AccountDetailResponse.builder()
+        given(accountMapper.findByBankCodeAndAccountNoForUpdate(BANK_CODE, accountNo)).willReturn(AccountDetailResponse.builder()
                 .accountId(accountId)
                 .bankCode(BANK_CODE)
                 .accountNo(accountNo)
