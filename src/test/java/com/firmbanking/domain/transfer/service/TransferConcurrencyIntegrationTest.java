@@ -6,7 +6,6 @@ import com.firmbanking.domain.transfer.dto.request.ExecuteTransferRequest;
 import com.firmbanking.domain.transfer.dto.response.TransferResultResponse;
 import com.firmbanking.global.code.ResponseCode;
 import com.firmbanking.global.code.TransferType;
-import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,7 +25,6 @@ import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@Slf4j
 @SpringBootTest
 @Import(TestcontainersConfig.class)
 @ActiveProfiles("test")
@@ -51,33 +49,24 @@ class TransferConcurrencyIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("지급 계좌 잔액 100,000,000에서 1만 원 지급 100건을 동시에 보내면 100건 모두 성공하지만 잔액이 99,000,000보다 크다")
-    void 동시_지급하면_출금이_사라진다() throws Exception {
+    @DisplayName("지급 계좌 잔액 100,000,000에서 1만 원 지급 100건을 동시에 보내면 100건 모두 성공하고 지급 계좌 잔액이 99,000,000이 된다")
+    void 동시_지급해도_출금이_사라지지_않는다() throws Exception {
         // given
         int requestCount = 100;
         BigDecimal amount = new BigDecimal("10000");
-        BigDecimal expectedBalance = new BigDecimal("99000000");
 
         // when
         List<TransferResultResponse> results = transferConcurrently(requestCount, amount);
 
         // then
-        BigDecimal balance = findPaymentAccountBalance();
-        logLostTransfers(expectedBalance, balance, amount);
-
         assertThat(countSuccessResponses(results)).isEqualTo(requestCount);
         assertThat(countSuccessTransfers()).isEqualTo(requestCount);
-        assertThat(balance).isGreaterThan(expectedBalance);
+        assertThat(findBalance(PAYMENT_ACCOUNT_NO)).isEqualByComparingTo("99000000");
+        assertThat(findBalance(CUSTOMER_ACCOUNT_NO)).isEqualByComparingTo("1000000");
     }
 
-    private BigDecimal findPaymentAccountBalance() {
-        return accountMapper.findByBankCodeAndAccountNo(BANK_CODE, PAYMENT_ACCOUNT_NO).getBalance();
-    }
-
-    private static void logLostTransfers(BigDecimal expectedBalance, BigDecimal balance, BigDecimal amount) {
-        BigDecimal lostAmount = balance.subtract(expectedBalance);
-        log.info("사라진 출금: {}원, {}건 (기대 잔액 {}, 실제 잔액 {})",
-                lostAmount, lostAmount.divide(amount), expectedBalance, balance);
+    private BigDecimal findBalance(String accountNo) {
+        return accountMapper.findByBankCodeAndAccountNo(BANK_CODE, accountNo).getBalance();
     }
 
     private static int countSuccessResponses(List<TransferResultResponse> results) {

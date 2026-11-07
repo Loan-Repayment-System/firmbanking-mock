@@ -16,6 +16,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.math.BigDecimal;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,13 +37,16 @@ class TransferServiceTest {
 
     private TransferMapper transferMapper;
     private TransferProcessor transferProcessor;
+    private AccountLock accountLock;
     private TransferService transferService;
 
     @BeforeEach
     void setUp() {
         transferMapper = mock(TransferMapper.class);
         transferProcessor = mock(TransferProcessor.class);
-        transferService = new TransferService(transferMapper, transferProcessor);
+        accountLock = mock(AccountLock.class);
+        given(accountLock.execute(any(), any())).willAnswer(invocation -> invocation.<Supplier<?>>getArgument(1).get());
+        transferService = new TransferService(transferMapper, transferProcessor, accountLock);
     }
 
     @Test
