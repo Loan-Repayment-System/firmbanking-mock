@@ -77,7 +77,6 @@ wait_install() {
   fi
 }
 
-# 같은 태그의 EC2가 남아 있으면 두 벌이 떠서 요금이 두 배가 된다.
 existing="$(aws ec2 describe-instances \
   --filters "Name=tag:Project,Values=$PROJECT" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
   --query 'Reservations[].Instances[].InstanceId' --output text)"
