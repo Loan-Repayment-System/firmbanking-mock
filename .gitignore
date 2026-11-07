@@ -18,3 +18,7 @@ Thumbs.db
 
 # 부하 측정 결과
 load-test/results/
+
+# 부하 측정 AWS 접속 키
+load-test/infra/*.pem
+load-test/infra/known_hosts
