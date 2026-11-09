@@ -37,7 +37,8 @@ public class TransferProcessor {
     public TransferResultResponse process(ExecuteTransferRequest request) {
         AccountDetailResponse withdrawal;
         AccountDetailResponse deposit;
-        if (locksWithdrawalFirst(request)) {
+        // 이체 방향과 관계없이 작은 계좌부터 잠근다. 잠그는 순서가 요청마다 다르면 반대 방향의 이체끼리 데드락이 생긴다.
+        if (isWithdrawalAccountSmaller(request)) {
             withdrawal = findWithdrawalAccount(request);
             deposit = findDepositAccount(request);
         } else {
@@ -53,10 +54,10 @@ public class TransferProcessor {
     }
 
     /**
-     * 이체 방향과 관계없이 (은행코드, 계좌번호)가 작은 계좌를 먼저 잠근다.
-     * 요청마다 잠그는 순서가 다르면 반대 방향의 이체끼리 서로의 잠금을 기다리는 데드락이 생긴다.
+     * 출금 계좌의 (은행코드, 계좌번호)가 입금 계좌보다 작은지 비교한다.
+     * 은행코드를 먼저 비교하고, 같으면 계좌번호를 비교한다. 같은 계좌면 true다.
      */
-    private static boolean locksWithdrawalFirst(ExecuteTransferRequest request) {
+    private static boolean isWithdrawalAccountSmaller(ExecuteTransferRequest request) {
         int byBankCode = request.getWithdrawalBankCode().compareTo(request.getDepositBankCode());
         if (byBankCode != 0) {
             return byBankCode < 0;
