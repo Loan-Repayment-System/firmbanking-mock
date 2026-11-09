@@ -18,6 +18,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 import java.math.BigDecimal;
 
@@ -25,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 
@@ -395,6 +397,71 @@ class TransferProcessorTest {
             assertThat(result.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("5000000"));
             then(accountMapper).should(never()).updateBalance(any(), any());
             assertThat(captureSaved().getBalanceAfter()).isEqualByComparingTo(new BigDecimal("5000000"));
+        }
+    }
+
+    // 요청마다 잠그는 순서가 다르면 반대 방향의 이체끼리 데드락이 생긴다
+    @Nested
+    @DisplayName("계좌를 잠글 때")
+    class LockOrder {
+
+        @Test
+        @DisplayName("지급 999 / 100-000-000002 → 999 / 200-000-000001이면 계좌번호가 작은 출금 계좌를 먼저 잠근다")
+        void 출금_계좌번호가_작으면_출금_계좌를_먼저_잠근다() {
+            // given
+            givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "10000000000");
+            givenAccount(CUSTOMER_ACCOUNT_ID, CUSTOMER_ACCOUNT_NO, "10000000");
+
+            // when
+            transferProcessor.process(request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO, "1000000"));
+
+            // then
+            InOrder inOrder = inOrder(accountMapper);
+            then(accountMapper).should(inOrder).findByBankCodeAndAccountNoForUpdate(BANK_CODE, PAYMENT_ACCOUNT_NO);
+            then(accountMapper).should(inOrder).findByBankCodeAndAccountNoForUpdate(BANK_CODE, CUSTOMER_ACCOUNT_NO);
+        }
+
+        @Test
+        @DisplayName("집금 999 / 200-000-000001 → 999 / 100-000-000001이면 계좌번호가 작은 입금 계좌를 먼저 잠근다")
+        void 입금_계좌번호가_작으면_입금_계좌를_먼저_잠근다() {
+            // given
+            givenAccount(CUSTOMER_ACCOUNT_ID, CUSTOMER_ACCOUNT_NO, "10000000");
+            givenAccount(COLLECTION_ACCOUNT_ID, COLLECTION_ACCOUNT_NO, "0");
+
+            // when
+            transferProcessor.process(collection(CUSTOMER_ACCOUNT_NO, COLLECTION_ACCOUNT_NO, "1000000"));
+
+            // then
+            InOrder inOrder = inOrder(accountMapper);
+            then(accountMapper).should(inOrder).findByBankCodeAndAccountNoForUpdate(BANK_CODE, COLLECTION_ACCOUNT_NO);
+            then(accountMapper).should(inOrder).findByBankCodeAndAccountNoForUpdate(BANK_CODE, CUSTOMER_ACCOUNT_NO);
+        }
+
+        @Test
+        @DisplayName("999 / 100-000-000002 → 001 / 900-000-000001이면 계좌번호가 커도 은행코드가 작은 입금 계좌를 먼저 잠근다")
+        void 은행코드가_다르면_은행코드가_작은_계좌를_먼저_잠근다() {
+            // given
+            ExecuteTransferRequest request = ExecuteTransferRequest.builder()
+                    .companyNo(COMPANY_NO)
+                    .sentDate("20261029")
+                    .messageNo("000123")
+                    .sentTime("143005")
+                    .transferType(TransferType.PAYMENT)
+                    .withdrawalBankCode(BANK_CODE)
+                    .withdrawalAccountNo(PAYMENT_ACCOUNT_NO)
+                    .depositBankCode("001")
+                    .depositAccountNo("900-000-000001")
+                    .amount(new BigDecimal("1000000"))
+                    .memo("대출금")
+                    .build();
+
+            // when
+            transferProcessor.process(request);
+
+            // then
+            InOrder inOrder = inOrder(accountMapper);
+            then(accountMapper).should(inOrder).findByBankCodeAndAccountNoForUpdate("001", "900-000-000001");
+            then(accountMapper).should(inOrder).findByBankCodeAndAccountNoForUpdate(BANK_CODE, PAYMENT_ACCOUNT_NO);
         }
     }
 
