@@ -39,11 +39,11 @@ public class TransferProcessor {
         AccountDetailResponse deposit;
         // 이체 방향과 관계없이 작은 계좌부터 잠근다. 잠그는 순서가 요청마다 다르면 반대 방향의 이체끼리 데드락이 생긴다.
         if (isWithdrawalAccountSmaller(request)) {
-            withdrawal = findWithdrawalAccount(request);
-            deposit = findDepositAccount(request);
+            withdrawal = lockWithdrawalAccount(request);
+            deposit = lockDepositAccount(request);
         } else {
-            deposit = findDepositAccount(request);
-            withdrawal = findWithdrawalAccount(request);
+            deposit = lockDepositAccount(request);
+            withdrawal = lockWithdrawalAccount(request);
         }
         ResponseCode checked = check(request, withdrawal, deposit);
         if (checked != ResponseCode.SUCCESS) {
@@ -65,12 +65,18 @@ public class TransferProcessor {
         return request.getWithdrawalAccountNo().compareTo(request.getDepositAccountNo()) <= 0;
     }
 
-    private AccountDetailResponse findWithdrawalAccount(ExecuteTransferRequest request) {
+    /**
+     * 출금 계좌를 조회하면서 행에 배타 잠금을 건다. 다른 트랜잭션이 잠갔으면 그 트랜잭션이 끝날 때까지 기다린다.
+     */
+    private AccountDetailResponse lockWithdrawalAccount(ExecuteTransferRequest request) {
         return accountMapper.findByBankCodeAndAccountNoForUpdate(
                 request.getWithdrawalBankCode(), request.getWithdrawalAccountNo());
     }
 
-    private AccountDetailResponse findDepositAccount(ExecuteTransferRequest request) {
+    /**
+     * 입금 계좌를 조회하면서 행에 배타 잠금을 건다. 다른 트랜잭션이 잠갔으면 그 트랜잭션이 끝날 때까지 기다린다.
+     */
+    private AccountDetailResponse lockDepositAccount(ExecuteTransferRequest request) {
         return accountMapper.findByBankCodeAndAccountNoForUpdate(
                 request.getDepositBankCode(), request.getDepositAccountNo());
     }
