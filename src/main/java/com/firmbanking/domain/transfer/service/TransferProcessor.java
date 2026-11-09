@@ -35,14 +35,33 @@ public class TransferProcessor {
 
     @Transactional
     public TransferResultResponse process(ExecuteTransferRequest request) {
-        AccountDetailResponse withdrawal = findWithdrawalAccount(request);
-        AccountDetailResponse deposit = findDepositAccount(request);
+        AccountDetailResponse withdrawal;
+        AccountDetailResponse deposit;
+        if (locksWithdrawalFirst(request)) {
+            withdrawal = findWithdrawalAccount(request);
+            deposit = findDepositAccount(request);
+        } else {
+            deposit = findDepositAccount(request);
+            withdrawal = findWithdrawalAccount(request);
+        }
         ResponseCode checked = check(request, withdrawal, deposit);
         if (checked != ResponseCode.SUCCESS) {
             return save(request, checked, null);
         }
         BigDecimal balanceAfter = moveBalance(request, withdrawal, deposit);
         return save(request, ResponseCode.SUCCESS, balanceAfter);
+    }
+
+    /**
+     * 이체 방향과 관계없이 (은행코드, 계좌번호)가 작은 계좌를 먼저 잠근다.
+     * 요청마다 잠그는 순서가 다르면 반대 방향의 이체끼리 서로의 잠금을 기다리는 데드락이 생긴다.
+     */
+    private static boolean locksWithdrawalFirst(ExecuteTransferRequest request) {
+        int byBankCode = request.getWithdrawalBankCode().compareTo(request.getDepositBankCode());
+        if (byBankCode != 0) {
+            return byBankCode < 0;
+        }
+        return request.getWithdrawalAccountNo().compareTo(request.getDepositAccountNo()) <= 0;
     }
 
     private AccountDetailResponse findWithdrawalAccount(ExecuteTransferRequest request) {

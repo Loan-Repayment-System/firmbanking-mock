@@ -55,11 +55,40 @@ class TransferConcurrencyIntegrationTest {
         int requestCount = 100;
         BigDecimal amount = new BigDecimal("10000");
 
+        List<ExecuteTransferRequest> requests = new ArrayList<>();
+        for (int i = 1; i <= requestCount; i++) {
+            requests.add(paymentRequest(String.format("%06d", i), amount));
+        }
+
         // when
-        List<TransferResultResponse> results = transferConcurrently(requestCount, amount);
+        List<TransferResultResponse> results = transferConcurrently(requests);
 
         // then
-        assertThat(countSuccessResponses(results)).isEqualTo(requestCount);
+        assertThat(countResponses(results, ResponseCode.SUCCESS)).isEqualTo(requestCount);
+        assertThat(countSuccessTransfers()).isEqualTo(requestCount);
+        assertThat(findBalance(PAYMENT_ACCOUNT_NO)).isEqualByComparingTo("99000000");
+        assertThat(findBalance(CUSTOMER_ACCOUNT_NO)).isEqualByComparingTo("1000000");
+    }
+
+    // 잠그는 순서가 이체 방향을 따르면 지급은 지급 계좌 → 고객 계좌, 이 집금은 고객 계좌 → 지급 계좌 순서로 잠가 데드락이 생긴다
+    @Test
+    @DisplayName("지급 계좌에서 고객 계좌로 1만 원 지급 100건과 입금 계좌를 지급 계좌로 적은 집금 100건을 동시에 보내면 200건 모두 응답하고 지급 100건만 성공해 지급 계좌 잔액이 99,000,000이 된다")
+    void 반대_방향_이체가_동시에_실행돼도_데드락이_생기지_않는다() throws Exception {
+        // given
+        int requestCount = 100;
+        BigDecimal amount = new BigDecimal("10000");
+        List<ExecuteTransferRequest> requests = new ArrayList<>();
+        for (int i = 1; i <= requestCount; i++) {
+            requests.add(paymentRequest(String.format("%06d", i), amount));
+            requests.add(collectionToPaymentAccountRequest(String.format("%06d", requestCount + i), amount));
+        }
+
+        // when
+        List<TransferResultResponse> results = transferConcurrently(requests);
+
+        // then
+        assertThat(countResponses(results, ResponseCode.SUCCESS)).isEqualTo(requestCount);
+        assertThat(countResponses(results, ResponseCode.NOT_COMPANY_ACCOUNT)).isEqualTo(requestCount);
         assertThat(countSuccessTransfers()).isEqualTo(requestCount);
         assertThat(findBalance(PAYMENT_ACCOUNT_NO)).isEqualByComparingTo("99000000");
         assertThat(findBalance(CUSTOMER_ACCOUNT_NO)).isEqualByComparingTo("1000000");
@@ -69,22 +98,21 @@ class TransferConcurrencyIntegrationTest {
         return accountMapper.findByBankCodeAndAccountNo(BANK_CODE, accountNo).getBalance();
     }
 
-    private static int countSuccessResponses(List<TransferResultResponse> results) {
+    private static int countResponses(List<TransferResultResponse> results, ResponseCode responseCode) {
         int count = 0;
         for (TransferResultResponse result : results) {
-            if (result.getResponseCode() == ResponseCode.SUCCESS) {
+            if (result.getResponseCode() == responseCode) {
                 count++;
             }
         }
         return count;
     }
 
-    private List<TransferResultResponse> transferConcurrently(int requestCount, BigDecimal amount) throws Exception {
+    private List<TransferResultResponse> transferConcurrently(List<ExecuteTransferRequest> requests) throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(THREAD_COUNT);
         CountDownLatch start = new CountDownLatch(1);
         List<Future<TransferResultResponse>> futures = new ArrayList<>();
-        for (int i = 1; i <= requestCount; i++) {
-            ExecuteTransferRequest request = paymentRequest(String.format("%06d", i), amount);
+        for (ExecuteTransferRequest request : requests) {
             futures.add(executor.submit(() -> {
                 start.await();
                 return transferService.transfer(request);
@@ -110,6 +138,25 @@ class TransferConcurrencyIntegrationTest {
                 .withdrawalAccountNo(PAYMENT_ACCOUNT_NO)
                 .depositBankCode(BANK_CODE)
                 .depositAccountNo(CUSTOMER_ACCOUNT_NO)
+                .amount(amount)
+                .memo("동시성")
+                .build();
+    }
+
+    /**
+     * 고객 계좌에서 지급 계좌로 가는 집금. 입금 계좌가 수납 계좌가 아니라서 거절된다.
+     */
+    private static ExecuteTransferRequest collectionToPaymentAccountRequest(String messageNo, BigDecimal amount) {
+        return ExecuteTransferRequest.builder()
+                .companyNo(COMPANY_NO)
+                .sentDate("20261104")
+                .messageNo(messageNo)
+                .sentTime("120000")
+                .transferType(TransferType.COLLECTION)
+                .withdrawalBankCode(BANK_CODE)
+                .withdrawalAccountNo(CUSTOMER_ACCOUNT_NO)
+                .depositBankCode(BANK_CODE)
+                .depositAccountNo(PAYMENT_ACCOUNT_NO)
                 .amount(amount)
                 .memo("동시성")
                 .build();
