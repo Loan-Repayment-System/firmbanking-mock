@@ -56,6 +56,31 @@ class AccountMapperIntegrationTest {
             // then
             assertThat(account).isNull();
         }
+
+        @Test
+        @DisplayName("999 / 100-000-000002를 잠금 조회하면 예금주명 캐피탈, 생년월일 null, 잔액 10,000,000,000이다")
+        void 계좌가_있으면_잠금_조회로_계좌를_돌려준다() {
+            // when
+            AccountDetailResponse account = accountMapper.findByBankCodeAndAccountNoForUpdate("999", "100-000-000002");
+
+            // then
+            assertThat(account.getAccountId()).isNotNull();
+            assertThat(account.getBankCode()).isEqualTo("999");
+            assertThat(account.getAccountNo()).isEqualTo("100-000-000002");
+            assertThat(account.getHolderName()).isEqualTo("캐피탈");
+            assertThat(account.getHolderBirthDate()).isNull();
+            assertThat(account.getBalance()).isEqualByComparingTo(new BigDecimal("10000000000"));
+        }
+
+        @Test
+        @DisplayName("999 / 200-999-999999를 잠금 조회하면 null이다")
+        void 계좌가_없으면_잠금_조회도_null이다() {
+            // when
+            AccountDetailResponse account = accountMapper.findByBankCodeAndAccountNoForUpdate("999", "200-999-999999");
+
+            // then
+            assertThat(account).isNull();
+        }
     }
 
     @Test
