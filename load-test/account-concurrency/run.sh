@@ -3,7 +3,7 @@
 #
 #   METHOD=named-lock APP_HOST=10.0.1.10 DB_HOST=10.0.1.20 \
 #   APP_SSH=ec2-user@10.0.1.10 DB_SSH=ec2-user@10.0.1.20 \
-#   MYSQL_ROOT_PASSWORD=... MYSQL_PASSWORD=... ./load-test/run.sh [실행...]
+#   MYSQL_ROOT_PASSWORD=... MYSQL_PASSWORD=... ./load-test/account-concurrency/run.sh [실행...]
 #
 # 실행: collection(일괄 집금), payment-baseline(집금 없이 지급·성명조회), payment-main(일괄 집금 중 지급·성명조회).
 # 생략하면 세 개를 이 순서로 한다. 실행마다 DB를 새로 만들고 앱을 다시 띄운다.
@@ -14,7 +14,7 @@
 # 로컬 확인: 거래마다 연결을 여는 부하를 Docker Desktop의 포트 포워딩으로 보내면 연결 시간 초과가 난다.
 # DOCKER_NETWORK를 주면 모든 컨테이너를 그 네트워크에 붙이고 포트를 열지 않는다. 호스트는 컨테이너 이름을 쓴다.
 #   METHOD=named-lock DOCKER_NETWORK=firmbanking-mock-load APP_HOST=firmbanking-mock-load-app \
-#   DB_HOST=firmbanking-mock-load-db MYSQL_PORT=3306 ... ./load-test/run.sh
+#   DB_HOST=firmbanking-mock-load-db MYSQL_PORT=3306 ... ./load-test/account-concurrency/run.sh
 set -euo pipefail
 
 : "${METHOD:?METHOD가 없다}"

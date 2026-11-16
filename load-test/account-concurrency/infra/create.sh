@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 부하 측정용 EC2 3대(k6·앱·DB)와 보안 그룹·키 페어를 만든다. 개발 PC에서 실행한다.
 #
-#   ./load-test/infra/create.sh
+#   ./load-test/account-concurrency/infra/create.sh
 #
 # 앱 서버가 이미지 5개를 빌드하느라 끝날 때까지 5분쯤 걸린다. 끝나면 k6 서버 접속 방법을 출력한다.
 # 켜 둔 시간만큼 요금이 나가므로 다 쓰면 destroy.sh로 지운다. 중간에 실패해도 destroy.sh로 지우고 다시 실행한다.
@@ -150,9 +150,9 @@ cat <<EOF
   ssh -i $KEY_FILE -o UserKnownHostsFile=$KNOWN_HOSTS ec2-user@$K6_IP
   tmux new -s load
   cd ~/firmbanking-mock && set -a && . ~/load.env && set +a
-  METHOD=named-lock MYSQL_ROOT_PASSWORD=... MYSQL_PASSWORD=... ./load-test/run.sh
+  METHOD=named-lock MYSQL_ROOT_PASSWORD=... MYSQL_PASSWORD=... ./load-test/account-concurrency/run.sh
 
 결과를 이 PC로 가져온 뒤 지운다.
-  scp -r -i $KEY_FILE -o UserKnownHostsFile=$KNOWN_HOSTS ec2-user@$K6_IP:firmbanking-mock/load-test/results load-test/
-  ./load-test/infra/destroy.sh
+  scp -r -i $KEY_FILE -o UserKnownHostsFile=$KNOWN_HOSTS ec2-user@$K6_IP:firmbanking-mock/load-test/account-concurrency/results load-test/account-concurrency/
+  ./load-test/account-concurrency/infra/destroy.sh
 EOF

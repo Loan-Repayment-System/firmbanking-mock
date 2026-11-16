@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # create.sh가 만든 자원을 모두 지운다. EC2·보안 그룹은 Project 태그로, 키 페어는 이름으로 찾는다.
 #
-#   ./load-test/infra/destroy.sh
+#   ./load-test/account-concurrency/infra/destroy.sh
 set -euo pipefail
 
 INFRA_DIR="$(cd "$(dirname "$0")" && pwd)"
