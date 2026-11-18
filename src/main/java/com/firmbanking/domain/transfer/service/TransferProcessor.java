@@ -46,12 +46,12 @@ public class TransferProcessor {
     }
 
     private AccountDetailResponse findWithdrawalAccount(ExecuteTransferRequest request) {
-        return accountMapper.findByBankCodeAndAccountNoForUpdate(
+        return accountMapper.findByBankCodeAndAccountNo(
                 request.getWithdrawalBankCode(), request.getWithdrawalAccountNo());
     }
 
     private AccountDetailResponse findDepositAccount(ExecuteTransferRequest request) {
-        return accountMapper.findByBankCodeAndAccountNoForUpdate(
+        return accountMapper.findByBankCodeAndAccountNo(
                 request.getDepositBankCode(), request.getDepositAccountNo());
     }
 
