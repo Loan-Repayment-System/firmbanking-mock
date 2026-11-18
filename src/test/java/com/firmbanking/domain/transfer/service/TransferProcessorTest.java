@@ -6,10 +6,13 @@ import com.firmbanking.domain.company.dto.response.CompanyDetailResponse;
 import com.firmbanking.domain.company.mapper.CompanyMapper;
 import com.firmbanking.domain.consent.dto.response.WithdrawalConsentDetailResponse;
 import com.firmbanking.domain.consent.mapper.WithdrawalConsentMapper;
+import com.firmbanking.domain.transfer.dto.request.CreateAccountTransactionRequest;
 import com.firmbanking.domain.transfer.dto.request.CreateTransferRequest;
 import com.firmbanking.domain.transfer.dto.request.ExecuteTransferRequest;
 import com.firmbanking.domain.transfer.dto.response.TransferResultResponse;
+import com.firmbanking.domain.transfer.mapper.AccountTransactionMapper;
 import com.firmbanking.domain.transfer.mapper.TransferMapper;
+import com.firmbanking.global.code.AccountTransactionType;
 import com.firmbanking.global.code.ConsentStatus;
 import com.firmbanking.global.code.ResponseCode;
 import com.firmbanking.global.code.TransferType;
@@ -18,15 +21,22 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 @DisplayName("TransferProcessor")
 class TransferProcessorTest {
@@ -39,8 +49,11 @@ class TransferProcessorTest {
     private static final Long COLLECTION_ACCOUNT_ID = 1L;
     private static final Long PAYMENT_ACCOUNT_ID = 2L;
     private static final Long CUSTOMER_ACCOUNT_ID = 10L;
+    private static final Long WITHDRAWAL_TRANSACTION_ID = 101L;
+    private static final Long DEPOSIT_TRANSACTION_ID = 102L;
 
     private AccountMapper accountMapper;
+    private AccountTransactionMapper accountTransactionMapper;
     private CompanyMapper companyMapper;
     private TransferMapper transferMapper;
     private WithdrawalConsentMapper withdrawalConsentMapper;
@@ -49,16 +62,26 @@ class TransferProcessorTest {
     @BeforeEach
     void setUp() {
         accountMapper = mock(AccountMapper.class);
+        accountTransactionMapper = mock(AccountTransactionMapper.class);
         companyMapper = mock(CompanyMapper.class);
         transferMapper = mock(TransferMapper.class);
         withdrawalConsentMapper = mock(WithdrawalConsentMapper.class);
-        transferProcessor = new TransferProcessor(accountMapper, companyMapper, transferMapper, withdrawalConsentMapper);
+        transferProcessor = new TransferProcessor(accountMapper, accountTransactionMapper, companyMapper,
+                transferMapper, withdrawalConsentMapper);
         given(companyMapper.findByCompanyNo(COMPANY_NO)).willReturn(CompanyDetailResponse.builder()
                 .companyNo(COMPANY_NO)
                 .companyName("캐피탈")
                 .collectionAccountId(COLLECTION_ACCOUNT_ID)
                 .paymentAccountId(PAYMENT_ACCOUNT_ID)
                 .build());
+        // MyBatis가 생성된 키를 요청에 채우는 동작을 대신한다
+        willAnswer(invocation -> {
+            CreateAccountTransactionRequest transaction = invocation.getArgument(0);
+            ReflectionTestUtils.setField(transaction, "accountTransactionId",
+                    transaction.getAccountTransactionType() == AccountTransactionType.WITHDRAWAL
+                            ? WITHDRAWAL_TRANSACTION_ID : DEPOSIT_TRANSACTION_ID);
+            return null;
+        }).given(accountTransactionMapper).insert(any());
     }
 
     @Nested
@@ -209,6 +232,68 @@ class TransferProcessorTest {
             assertThat(saved.getResponseCode()).isEqualTo("0000");
             assertThat(saved.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("9999000000"));
         }
+
+        @Test
+        @DisplayName("지급 계좌 잔액 10,000,000,000에서 1,000,000을 지급하면 지급 계좌 출금 / 잔액 9,999,000,000, 고객 계좌 입금 / 잔액 11,000,000 거래를 저장한다")
+        void 출금과_입금_거래를_저장한다() {
+            // given
+            givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "10000000000");
+
+            // when
+            transferProcessor.process(request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO, "1000000"));
+
+            // then
+            List<CreateAccountTransactionRequest> transactions = captureTransactions();
+            assertTransaction(transactions.get(0), PAYMENT_ACCOUNT_ID, AccountTransactionType.WITHDRAWAL, "1000000", "9999000000");
+            assertTransaction(transactions.get(1), CUSTOMER_ACCOUNT_ID, AccountTransactionType.DEPOSIT, "1000000", "11000000");
+        }
+
+        @Test
+        @DisplayName("생성된 거래 id가 출금 101, 입금 102면 이체 결과에 101, 102를 저장한다")
+        void 이체_결과에_거래_id를_저장한다() {
+            // given
+            givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "10000000000");
+
+            // when
+            transferProcessor.process(request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO, "1000000"));
+
+            // then
+            assertTransactionIdsSaved(captureSaved());
+        }
+
+        // 계좌 행을 먼저 변경해야 거래 INSERT의 FK 확인이 그 뒤에 일어난다
+        @Test
+        @DisplayName("지급하면 출금 계좌 UPDATE, 입금 계좌 UPDATE, 출금 거래 INSERT, 입금 거래 INSERT, 이체 결과 INSERT 순서로 호출한다")
+        void 계좌_변경_후_거래와_이체_결과를_저장한다() {
+            // given
+            givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "10000000000");
+            InOrder inOrder = inOrder(accountMapper, accountTransactionMapper, transferMapper);
+
+            // when
+            transferProcessor.process(request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO, "1000000"));
+
+            // then
+            then(accountMapper).should(inOrder).updateBalance(PAYMENT_ACCOUNT_ID, new BigDecimal("9999000000"));
+            then(accountMapper).should(inOrder).updateBalance(CUSTOMER_ACCOUNT_ID, new BigDecimal("11000000"));
+            then(accountTransactionMapper).should(inOrder).insert(argThat(
+                    transaction -> transaction.getAccountTransactionType() == AccountTransactionType.WITHDRAWAL));
+            then(accountTransactionMapper).should(inOrder).insert(argThat(
+                    transaction -> transaction.getAccountTransactionType() == AccountTransactionType.DEPOSIT));
+            then(transferMapper).should(inOrder).insert(any());
+        }
+
+        @Test
+        @DisplayName("지급 계좌 잔액 1,000,000에서 1,000,000을 지급하면 출금 거래 잔액은 0이다")
+        void 전액_지급하면_출금_거래_잔액이_0이다() {
+            // given
+            givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "1000000");
+
+            // when
+            transferProcessor.process(request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO, "1000000"));
+
+            // then
+            assertTransaction(captureTransactions().get(0), PAYMENT_ACCOUNT_ID, AccountTransactionType.WITHDRAWAL, "1000000", "0");
+        }
     }
 
     @Test
@@ -227,7 +312,7 @@ class TransferProcessorTest {
 
     // 따로 쓰면 입금이 조회한 잔액으로 출금을 덮어써 돈이 생긴다
     @Test
-    @DisplayName("입금계좌가 지급 계좌 자신이면 잔액을 바꾸지 않고 0000 / 10,000,000,000으로 저장한다")
+    @DisplayName("입금계좌가 지급 계좌 자신이면 잔액을 바꾸지 않고 출금 / 9,999,000,000, 입금 / 10,000,000,000 거래와 0000 / 10,000,000,000을 저장한다")
     void 같은_계좌면_잔액을_바꾸지_않는다() {
         // given
         givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "10000000000");
@@ -242,6 +327,10 @@ class TransferProcessorTest {
         CreateTransferRequest saved = captureSaved();
         assertThat(saved.getResponseCode()).isEqualTo("0000");
         assertThat(saved.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("10000000000"));
+        assertTransactionIdsSaved(saved);
+        List<CreateAccountTransactionRequest> transactions = captureTransactions();
+        assertTransaction(transactions.get(0), PAYMENT_ACCOUNT_ID, AccountTransactionType.WITHDRAWAL, "1000000", "9999000000");
+        assertTransaction(transactions.get(1), PAYMENT_ACCOUNT_ID, AccountTransactionType.DEPOSIT, "1000000", "10000000000");
     }
 
     @Nested
@@ -375,12 +464,25 @@ class TransferProcessorTest {
                     assertThat(saved.getResponseCode()).isEqualTo("0000");
                     assertThat(saved.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("1000000"));
                 }
+
+                @Test
+                @DisplayName("1,000,000을 집금하면 고객 계좌 출금 / 잔액 9,000,000, 수납 계좌 입금 / 잔액 1,000,000 거래와 거래 id 101, 102를 저장한다")
+                void 출금과_입금_거래를_저장한다() {
+                    // when
+                    transferProcessor.process(collection(CUSTOMER_ACCOUNT_NO, COLLECTION_ACCOUNT_NO, "1000000"));
+
+                    // then
+                    List<CreateAccountTransactionRequest> transactions = captureTransactions();
+                    assertTransaction(transactions.get(0), CUSTOMER_ACCOUNT_ID, AccountTransactionType.WITHDRAWAL, "1000000", "9000000");
+                    assertTransaction(transactions.get(1), COLLECTION_ACCOUNT_ID, AccountTransactionType.DEPOSIT, "1000000", "1000000");
+                    assertTransactionIdsSaved(captureSaved());
+                }
             }
         }
 
         // 따로 쓰면 입금이 조회한 잔액으로 출금을 덮어써 돈이 생긴다
         @Test
-        @DisplayName("출금계좌가 출금 동의한 수납 계좌 자신(잔액 5,000,000)이면 잔액을 바꾸지 않고 0000 / 5,000,000으로 저장한다")
+        @DisplayName("출금계좌가 출금 동의한 수납 계좌 자신(잔액 5,000,000)이면 잔액을 바꾸지 않고 출금 / 4,000,000, 입금 / 5,000,000 거래와 0000 / 5,000,000을 저장한다")
         void 같은_계좌면_잔액을_바꾸지_않는다() {
             // given
             givenAccount(COLLECTION_ACCOUNT_ID, COLLECTION_ACCOUNT_NO, "5000000");
@@ -394,7 +496,12 @@ class TransferProcessorTest {
             assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
             assertThat(result.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("5000000"));
             then(accountMapper).should(never()).updateBalance(any(), any());
-            assertThat(captureSaved().getBalanceAfter()).isEqualByComparingTo(new BigDecimal("5000000"));
+            CreateTransferRequest saved = captureSaved();
+            assertThat(saved.getBalanceAfter()).isEqualByComparingTo(new BigDecimal("5000000"));
+            assertTransactionIdsSaved(saved);
+            List<CreateAccountTransactionRequest> transactions = captureTransactions();
+            assertTransaction(transactions.get(0), COLLECTION_ACCOUNT_ID, AccountTransactionType.WITHDRAWAL, "1000000", "4000000");
+            assertTransaction(transactions.get(1), COLLECTION_ACCOUNT_ID, AccountTransactionType.DEPOSIT, "1000000", "5000000");
         }
     }
 
@@ -424,15 +531,38 @@ class TransferProcessorTest {
         assertThat(result.getResponseCode()).isEqualTo(responseCode);
         assertThat(result.getBalanceAfter()).isNull();
         then(accountMapper).should(never()).updateBalance(any(), any());
+        then(accountTransactionMapper).should(never()).insert(any());
         CreateTransferRequest saved = captureSaved();
         assertThat(saved.getResponseCode()).isEqualTo(responseCode.getCode());
         assertThat(saved.getBalanceAfter()).isNull();
+        assertThat(saved.getWithdrawalTransactionId()).isNull();
+        assertThat(saved.getDepositTransactionId()).isNull();
+    }
+
+    private void assertTransaction(CreateAccountTransactionRequest transaction, Long accountId,
+                                   AccountTransactionType type, String amount, String balanceAfter) {
+        assertThat(transaction.getAccountId()).isEqualTo(accountId);
+        assertThat(transaction.getAccountTransactionType()).isEqualTo(type);
+        assertThat(transaction.getAmount()).isEqualByComparingTo(new BigDecimal(amount));
+        assertThat(transaction.getBalanceAfter()).isEqualByComparingTo(new BigDecimal(balanceAfter));
+    }
+
+    private void assertTransactionIdsSaved(CreateTransferRequest saved) {
+        assertThat(saved.getWithdrawalTransactionId()).isEqualTo(WITHDRAWAL_TRANSACTION_ID);
+        assertThat(saved.getDepositTransactionId()).isEqualTo(DEPOSIT_TRANSACTION_ID);
     }
 
     private CreateTransferRequest captureSaved() {
         ArgumentCaptor<CreateTransferRequest> captor = ArgumentCaptor.forClass(CreateTransferRequest.class);
         then(transferMapper).should().insert(captor.capture());
         return captor.getValue();
+    }
+
+    private List<CreateAccountTransactionRequest> captureTransactions() {
+        ArgumentCaptor<CreateAccountTransactionRequest> captor =
+                ArgumentCaptor.forClass(CreateAccountTransactionRequest.class);
+        then(accountTransactionMapper).should(times(2)).insert(captor.capture());
+        return captor.getAllValues();
     }
 
     private static ExecuteTransferRequest request(String withdrawalAccountNo, String depositAccountNo, String amount) {

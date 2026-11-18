@@ -16,6 +16,8 @@
                memo,
                response_code,
                balance_after,
+               withdrawal_transaction_id,
+               deposit_transaction_id,
                created_at
         FROM transfer
         WHERE company_no = #{companyNo}
@@ -26,9 +28,11 @@
     <insert id="insert">
         INSERT INTO transfer (company_no, sent_date, message_no, sent_time, transfer_type_id,
                               withdrawal_account_no, deposit_bank_code, deposit_account_no,
-                              amount, memo, response_code, balance_after)
+                              amount, memo, response_code, balance_after,
+                              withdrawal_transaction_id, deposit_transaction_id)
         VALUES (#{companyNo}, #{sentDate}, #{messageNo}, #{sentTime}, #{transferType},
                 #{withdrawalAccountNo}, #{depositBankCode}, #{depositAccountNo},
-                #{amount}, #{memo}, #{responseCode}, #{balanceAfter})
+                #{amount}, #{memo}, #{responseCode}, #{balanceAfter},
+                #{withdrawalTransactionId}, #{depositTransactionId})
     </insert>
 </mapper>

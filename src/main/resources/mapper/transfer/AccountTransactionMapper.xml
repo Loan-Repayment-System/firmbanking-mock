@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.firmbanking.domain.transfer.mapper.AccountTransactionMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="accountTransactionId">
+        INSERT INTO account_transaction (account_id, account_transaction_type_id, amount, balance_after)
+        VALUES (#{accountId}, #{accountTransactionType}, #{amount}, #{balanceAfter})
+    </insert>
+</mapper>

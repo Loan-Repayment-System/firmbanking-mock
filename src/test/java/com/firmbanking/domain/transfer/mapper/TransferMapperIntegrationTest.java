@@ -1,8 +1,11 @@
 package com.firmbanking.domain.transfer.mapper;
 
 import com.firmbanking.TestcontainersConfig;
+import com.firmbanking.domain.account.mapper.AccountMapper;
+import com.firmbanking.domain.transfer.dto.request.CreateAccountTransactionRequest;
 import com.firmbanking.domain.transfer.dto.request.CreateTransferRequest;
 import com.firmbanking.domain.transfer.dto.response.TransferDetailResponse;
+import com.firmbanking.global.code.AccountTransactionType;
 import com.firmbanking.global.code.TransferType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -32,6 +35,12 @@ class TransferMapperIntegrationTest {
 
     @Autowired
     private TransferMapper transferMapper;
+
+    @Autowired
+    private AccountTransactionMapper accountTransactionMapper;
+
+    @Autowired
+    private AccountMapper accountMapper;
 
     @Test
     @DisplayName("CAPITAL00001 / 20261029 / 000123의 이체 결과가 없으면 null이다")
@@ -113,7 +122,56 @@ class TransferMapperIntegrationTest {
         assertThat(transfer.getBalanceAfter()).isNull();
     }
 
+    @Test
+    @DisplayName("000125를 출금·입금 거래 id와 함께 INSERT하고 조회하면 거래 id가 넣은 값과 같다")
+    void 거래_id가_저장된다() {
+        // given
+        Long withdrawalTransactionId = insertTransaction(AccountTransactionType.WITHDRAWAL);
+        Long depositTransactionId = insertTransaction(AccountTransactionType.DEPOSIT);
+        transferMapper.insert(request("000125", "0000", new BigDecimal("9999000000"),
+                withdrawalTransactionId, depositTransactionId));
+
+        // when
+        TransferDetailResponse transfer =
+                transferMapper.findByCompanyNoAndSentDateAndMessageNo(COMPANY_NO, SENT_DATE, "000125");
+
+        // then
+        assertThat(transfer.getWithdrawalTransactionId()).isEqualTo(withdrawalTransactionId);
+        assertThat(transfer.getDepositTransactionId()).isEqualTo(depositTransactionId);
+    }
+
+    @Test
+    @DisplayName("000126을 거래 id 없이 B003으로 INSERT하고 조회하면 출금·입금 거래 id가 null이다")
+    void 거절은_거래_id가_null이다() {
+        // given
+        transferMapper.insert(request("000126", "B003", null));
+
+        // when
+        TransferDetailResponse transfer =
+                transferMapper.findByCompanyNoAndSentDateAndMessageNo(COMPANY_NO, SENT_DATE, "000126");
+
+        // then
+        assertThat(transfer.getWithdrawalTransactionId()).isNull();
+        assertThat(transfer.getDepositTransactionId()).isNull();
+    }
+
+    private Long insertTransaction(AccountTransactionType type) {
+        CreateAccountTransactionRequest transaction = CreateAccountTransactionRequest.builder()
+                .accountId(accountMapper.findByBankCodeAndAccountNo("999", "100-000-000002").getAccountId())
+                .accountTransactionType(type)
+                .amount(new BigDecimal("1000000"))
+                .balanceAfter(new BigDecimal("9999000000"))
+                .build();
+        accountTransactionMapper.insert(transaction);
+        return transaction.getAccountTransactionId();
+    }
+
     private static CreateTransferRequest request(String messageNo, String responseCode, BigDecimal balanceAfter) {
+        return request(messageNo, responseCode, balanceAfter, null, null);
+    }
+
+    private static CreateTransferRequest request(String messageNo, String responseCode, BigDecimal balanceAfter,
+                                                 Long withdrawalTransactionId, Long depositTransactionId) {
         return CreateTransferRequest.builder()
                 .companyNo(COMPANY_NO)
                 .sentDate(SENT_DATE)
@@ -127,6 +185,8 @@ class TransferMapperIntegrationTest {
                 .memo("대출금")
                 .responseCode(responseCode)
                 .balanceAfter(balanceAfter)
+                .withdrawalTransactionId(withdrawalTransactionId)
+                .depositTransactionId(depositTransactionId)
                 .build();
     }
 }
