@@ -60,7 +60,7 @@ class TransferRequestMapperIntegrationTest {
     @DisplayName("요청 기록이 없으면 60초 이내 처리 중 여부는 false다")
     void 기록이_없으면_처리_중이_아니다() {
         // when
-        boolean exists = transferRequestMapper.existsRecentProcessing(INQUIRY);
+        boolean exists = transferRequestMapper.existsProcessingWithin60Seconds(INQUIRY);
 
         // then
         assertThat(exists).isFalse();
@@ -88,7 +88,7 @@ class TransferRequestMapperIntegrationTest {
         @DisplayName("60초 지난 처리 중을 오류로 바꾸면 0행이 바뀌고 처리 중을 유지한다")
         void 방금_저장했으면_오류로_바꾸지_않는다() {
             // when
-            int updated = transferRequestMapper.updateStaleProcessingToError(REQUEST);
+            int updated = transferRequestMapper.updateProcessingOver60SecondsToError(REQUEST);
 
             // then
             assertThat(updated).isZero();
@@ -117,10 +117,20 @@ class TransferRequestMapperIntegrationTest {
         }
 
         @Test
+        @DisplayName("상태를 조회하면 PROCESSING이다")
+        void 처리_중_상태를_조회한다() {
+            // when
+            TransferRequestStatus status = transferRequestMapper.findStatus(REQUEST);
+
+            // then
+            assertThat(status).isEqualTo(TransferRequestStatus.PROCESSING);
+        }
+
+        @Test
         @DisplayName("60초 이내 처리 중 여부는 true다")
         void 방금_저장했으면_처리_중이다() {
             // when
-            boolean exists = transferRequestMapper.existsRecentProcessing(INQUIRY);
+            boolean exists = transferRequestMapper.existsProcessingWithin60Seconds(INQUIRY);
 
             // then
             assertThat(exists).isTrue();
@@ -143,7 +153,7 @@ class TransferRequestMapperIntegrationTest {
             @DisplayName("60초 지난 처리 중을 오류로 바꾸면 1행이 바뀌고 오류가 된다")
             void 오류로_바꾼다() {
                 // when
-                int updated = transferRequestMapper.updateStaleProcessingToError(REQUEST);
+                int updated = transferRequestMapper.updateProcessingOver60SecondsToError(REQUEST);
 
                 // then
                 assertThat(updated).isEqualTo(1);
@@ -154,7 +164,7 @@ class TransferRequestMapperIntegrationTest {
             @DisplayName("60초 이내 처리 중 여부는 false다")
             void 처리_중이_아니다() {
                 // when
-                boolean exists = transferRequestMapper.existsRecentProcessing(INQUIRY);
+                boolean exists = transferRequestMapper.existsProcessingWithin60Seconds(INQUIRY);
 
                 // then
                 assertThat(exists).isFalse();
@@ -168,6 +178,16 @@ class TransferRequestMapperIntegrationTest {
             @BeforeEach
             void setUp() {
                 setStatus(TransferRequestStatus.ERROR);
+            }
+
+            @Test
+            @DisplayName("상태를 조회하면 ERROR다")
+            void 오류_상태를_조회한다() {
+                // when
+                TransferRequestStatus status = transferRequestMapper.findStatus(REQUEST);
+
+                // then
+                assertThat(status).isEqualTo(TransferRequestStatus.ERROR);
             }
 
             @Test
@@ -196,11 +216,24 @@ class TransferRequestMapperIntegrationTest {
             @DisplayName("60초 이내 처리 중 여부는 false다")
             void 처리_중이_아니다() {
                 // when
-                boolean exists = transferRequestMapper.existsRecentProcessing(INQUIRY);
+                boolean exists = transferRequestMapper.existsProcessingWithin60Seconds(INQUIRY);
 
                 // then
                 assertThat(exists).isFalse();
             }
+        }
+
+        @Test
+        @DisplayName("완료 상태에서 상태를 조회하면 COMPLETED다")
+        void 완료_상태를_조회한다() {
+            // given
+            setStatus(TransferRequestStatus.COMPLETED);
+
+            // when
+            TransferRequestStatus status = transferRequestMapper.findStatus(REQUEST);
+
+            // then
+            assertThat(status).isEqualTo(TransferRequestStatus.COMPLETED);
         }
 
         @Test

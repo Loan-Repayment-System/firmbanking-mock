@@ -24,7 +24,7 @@ public class TransferInquiryService {
         TransferDetailResponse transfer = transferMapper.findByCompanyNoAndSentDateAndMessageNo(
                 request.getCompanyNo(), request.getSentDate(), request.getMessageNo());
         if (transfer == null) {
-            ResponseCode responseCode = transferRequestMapper.existsRecentProcessing(request)
+            ResponseCode responseCode = transferRequestMapper.existsProcessingWithin60Seconds(request)
                     ? ResponseCode.TRANSFER_IN_PROGRESS : ResponseCode.ORIGINAL_TRANSFER_NOT_FOUND;
             return TransferInquiryResponse.builder().responseCode(responseCode).build();
         }

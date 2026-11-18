@@ -6,6 +6,7 @@ import com.firmbanking.domain.transfer.dto.response.TransferResultResponse;
 import com.firmbanking.domain.transfer.mapper.TransferMapper;
 import com.firmbanking.domain.transfer.mapper.TransferRequestMapper;
 import com.firmbanking.global.code.ResponseCode;
+import com.firmbanking.global.code.TransferRequestStatus;
 import com.firmbanking.global.code.TransferType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -81,45 +82,17 @@ class TransferServiceTest {
                     .given(transferRequestMapper).insertProcessing(any());
         }
 
-        @Test
-        @DisplayName("60초 지난 처리 중을 오류로 바꾼 뒤 오류를 처리 중으로 바꾼다")
-        void 멈춘_요청을_오류로_바꾼_뒤_다시_시작한다() {
-            // given
-            givenSaved(null);
-            ExecuteTransferRequest request = request();
-            InOrder inOrder = inOrder(transferRequestMapper);
-
-            // when
-            transferService.transfer(request);
-
-            // then
-            then(transferRequestMapper).should(inOrder).updateStaleProcessingToError(request);
-            then(transferRequestMapper).should(inOrder).updateErrorToProcessing(request);
-        }
-
-        @Test
-        @DisplayName("오류를 처리 중으로 1행 바꾸면 다시 처리하고 TransferProcessor의 결과를 돌려준다")
-        void 처리_중으로_바뀌면_다시_처리한다() {
-            // given
-            givenSaved(null);
-            ExecuteTransferRequest request = request();
-            TransferResultResponse processed = success();
-            given(transferRequestMapper.updateErrorToProcessing(request)).willReturn(1);
-            given(transferProcessor.process(request)).willReturn(processed);
-
-            // when
-            TransferResultResponse result = transferService.transfer(request);
-
-            // then
-            assertThat(result).isSameAs(processed);
-        }
-
         @Nested
-        @DisplayName("오류를 처리 중으로 바꾼 행이 0행일 때")
-        class NotStarted {
+        @DisplayName("요청이 완료 상태면")
+        class Completed {
+
+            @BeforeEach
+            void setUp() {
+                given(transferRequestMapper.findStatus(any())).willReturn(TransferRequestStatus.COMPLETED);
+            }
 
             @Test
-            @DisplayName("내용이 같은 이체 결과가 그사이 저장됐으면 0000 / 9,999,000,000을 돌려주고 처리하지 않는다")
+            @DisplayName("내용이 같은 이체 결과가 있으면 0000 / 9,999,000,000을 돌려주고 처리하지 않는다")
             void 저장된_결과를_돌려준다() {
                 // given
                 givenSavedAfterFirstFind(saved(ResponseCode.SUCCESS, BALANCE_AFTER));
@@ -134,7 +107,7 @@ class TransferServiceTest {
             }
 
             @Test
-            @DisplayName("출금금액이 2,000,000으로 다른 이체 결과가 저장됐으면 D001을 돌려주고 처리하지 않는다")
+            @DisplayName("출금금액이 2,000,000으로 다른 이체 결과가 있으면 D001을 돌려주고 처리하지 않는다")
             void 내용이_다르면_D001이다() {
                 // given
                 givenSavedAfterFirstFind(saved(ResponseCode.SUCCESS, BALANCE_AFTER, new BigDecimal("2000000")));
@@ -147,11 +120,68 @@ class TransferServiceTest {
                 then(transferProcessor).should(never()).process(any());
             }
 
-            @Test
-            @DisplayName("이체 결과가 없으면 D003을 돌려주고 처리하지 않는다")
-            void 결과가_없으면_D003이다() {
-                // given
+            private void givenSavedAfterFirstFind(TransferDetailResponse saved) {
+                given(transferMapper.findByCompanyNoAndSentDateAndMessageNo(COMPANY_NO, SENT_DATE, MESSAGE_NO))
+                        .willReturn(null, saved);
+            }
+        }
+
+        @Nested
+        @DisplayName("요청이 오류 상태면")
+        class Error {
+
+            @BeforeEach
+            void setUp() {
                 givenSaved(null);
+                given(transferRequestMapper.findStatus(any())).willReturn(TransferRequestStatus.ERROR);
+            }
+
+            @Test
+            @DisplayName("처리 중으로 1행 바꾸면 다시 처리하고 TransferProcessor의 결과를 돌려준다")
+            void 처리_중으로_바뀌면_다시_처리한다() {
+                // given
+                ExecuteTransferRequest request = request();
+                TransferResultResponse processed = success();
+                given(transferRequestMapper.updateErrorToProcessing(request)).willReturn(1);
+                given(transferProcessor.process(request)).willReturn(processed);
+
+                // when
+                TransferResultResponse result = transferService.transfer(request);
+
+                // then
+                assertThat(result).isSameAs(processed);
+            }
+
+            @Test
+            @DisplayName("처리 중으로 바꾼 행이 0행이면 D003을 돌려주고 처리하지 않는다")
+            void 다른_요청이_먼저_바꿨으면_D003이다() {
+                // given
+                given(transferRequestMapper.updateErrorToProcessing(any())).willReturn(0);
+
+                // when
+                TransferResultResponse result = transferService.transfer(request());
+
+                // then
+                assertThat(result.getResponseCode()).isEqualTo(ResponseCode.TRANSFER_IN_PROGRESS);
+                then(transferProcessor).should(never()).process(any());
+            }
+        }
+
+        @Nested
+        @DisplayName("요청이 처리 중 상태면")
+        class Processing {
+
+            @BeforeEach
+            void setUp() {
+                givenSaved(null);
+                given(transferRequestMapper.findStatus(any())).willReturn(TransferRequestStatus.PROCESSING);
+            }
+
+            @Test
+            @DisplayName("60초가 지나지 않아 오류로 바꾼 행이 0행이면 D003을 돌려주고 처리하지 않는다")
+            void _60초_이내면_D003이다() {
+                // given
+                given(transferRequestMapper.updateProcessingOver60SecondsToError(any())).willReturn(0);
 
                 // when
                 TransferResultResponse result = transferService.transfer(request());
@@ -159,12 +189,40 @@ class TransferServiceTest {
                 // then
                 assertThat(result.getResponseCode()).isEqualTo(ResponseCode.TRANSFER_IN_PROGRESS);
                 assertThat(result.getBalanceAfter()).isNull();
+                then(transferRequestMapper).should(never()).updateErrorToProcessing(any());
                 then(transferProcessor).should(never()).process(any());
             }
 
-            private void givenSavedAfterFirstFind(TransferDetailResponse saved) {
-                given(transferMapper.findByCompanyNoAndSentDateAndMessageNo(COMPANY_NO, SENT_DATE, MESSAGE_NO))
-                        .willReturn(null, saved);
+            @Test
+            @DisplayName("60초가 지나 오류로 1행, 처리 중으로 1행 바꾸면 다시 처리하고 TransferProcessor의 결과를 돌려준다")
+            void _60초가_지났으면_다시_처리한다() {
+                // given
+                ExecuteTransferRequest request = request();
+                TransferResultResponse processed = success();
+                given(transferRequestMapper.updateProcessingOver60SecondsToError(request)).willReturn(1);
+                given(transferRequestMapper.updateErrorToProcessing(request)).willReturn(1);
+                given(transferProcessor.process(request)).willReturn(processed);
+
+                // when
+                TransferResultResponse result = transferService.transfer(request);
+
+                // then
+                assertThat(result).isSameAs(processed);
+            }
+
+            @Test
+            @DisplayName("60초가 지나 오류로 1행 바꿨지만 처리 중으로 0행 바꾸면 D003을 돌려주고 처리하지 않는다")
+            void 다른_요청이_먼저_다시_시작했으면_D003이다() {
+                // given
+                given(transferRequestMapper.updateProcessingOver60SecondsToError(any())).willReturn(1);
+                given(transferRequestMapper.updateErrorToProcessing(any())).willReturn(0);
+
+                // when
+                TransferResultResponse result = transferService.transfer(request());
+
+                // then
+                assertThat(result.getResponseCode()).isEqualTo(ResponseCode.TRANSFER_IN_PROGRESS);
+                then(transferProcessor).should(never()).process(any());
             }
         }
     }

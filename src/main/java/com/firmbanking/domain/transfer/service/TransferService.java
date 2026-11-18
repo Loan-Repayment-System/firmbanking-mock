@@ -30,26 +30,32 @@ public class TransferService {
         if (saved != null) {
             return resultOf(saved, request);
         }
-        if (!startProcessing(request)) {
-            // 처리를 시작하지 못했다. 그사이 끝났으면 결과가 있고, 없으면 다른 요청이 처리 중이다.
-            TransferDetailResponse completed = findSaved(request);
-            return completed != null ? resultOf(completed, request) : inProgress();
+        try {
+            transferRequestMapper.insertProcessing(request);
+        } catch (DuplicateKeyException e) {
+            return handleExistingRequest(request);
         }
         return process(request);
     }
 
     /**
-     * 요청 기록이 이미 있으면 오류 상태이거나 처리 중인 채 60초가 지났을 때만 다시 처리한다.
-     * 조건부 UPDATE로 바꾸므로 동시에 들어온 재전송 중 하나만 처리한다.
+     * 같은 거래고유번호의 요청 기록이 이미 있을 때 상태별로 처리한다.
+     * 상태는 조건부 UPDATE로 바꾸므로 동시에 들어온 재전송 중 하나만 다시 처리한다.
      */
-    private boolean startProcessing(ExecuteTransferRequest request) {
-        try {
-            transferRequestMapper.insertProcessing(request);
-            return true;
-        } catch (DuplicateKeyException e) {
-            transferRequestMapper.updateStaleProcessingToError(request);
-            return transferRequestMapper.updateErrorToProcessing(request) == 1;
-        }
+    private TransferResultResponse handleExistingRequest(ExecuteTransferRequest request) {
+        return switch (transferRequestMapper.findStatus(request)) {
+            case COMPLETED -> resultOf(findSaved(request), request);
+            case ERROR -> retry(request);
+            case PROCESSING -> transferRequestMapper.updateProcessingOver60SecondsToError(request) == 1
+                    ? retry(request)
+                    : inProgress();
+        };
+    }
+
+    private TransferResultResponse retry(ExecuteTransferRequest request) {
+        return transferRequestMapper.updateErrorToProcessing(request) == 1
+                ? process(request)
+                : inProgress();
     }
 
     private TransferResultResponse process(ExecuteTransferRequest request) {

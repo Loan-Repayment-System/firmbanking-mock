@@ -53,7 +53,7 @@ class TransferInquiryServiceTest {
         // given
         given(transferMapper.findByCompanyNoAndSentDateAndMessageNo("CAPITAL00001", "20261029", "000100"))
                 .willReturn(null);
-        given(transferRequestMapper.existsRecentProcessing(any())).willReturn(true);
+        given(transferRequestMapper.existsProcessingWithin60Seconds(any())).willReturn(true);
 
         // when
         TransferInquiryResponse result = transferInquiryService.inquire(request());
@@ -70,7 +70,7 @@ class TransferInquiryServiceTest {
         // given
         given(transferMapper.findByCompanyNoAndSentDateAndMessageNo("CAPITAL00001", "20261029", "000100"))
                 .willReturn(null);
-        given(transferRequestMapper.existsRecentProcessing(any())).willReturn(false);
+        given(transferRequestMapper.existsProcessingWithin60Seconds(any())).willReturn(false);
 
         // when
         TransferInquiryResponse result = transferInquiryService.inquire(request());

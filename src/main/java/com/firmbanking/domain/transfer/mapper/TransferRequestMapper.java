@@ -2,6 +2,7 @@ package com.firmbanking.domain.transfer.mapper;
 
 import com.firmbanking.domain.transfer.dto.request.ExecuteTransferRequest;
 import com.firmbanking.domain.transfer.dto.request.InquireTransferRequest;
+import com.firmbanking.global.code.TransferRequestStatus;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
@@ -15,10 +16,12 @@ public interface TransferRequestMapper {
      */
     void insertProcessing(ExecuteTransferRequest request);
 
+    TransferRequestStatus findStatus(ExecuteTransferRequest request);
+
     /**
      * 처리 중인 채 60초가 지났으면 오류로 바꾼다.
      */
-    int updateStaleProcessingToError(ExecuteTransferRequest request);
+    int updateProcessingOver60SecondsToError(ExecuteTransferRequest request);
 
     int updateErrorToProcessing(ExecuteTransferRequest request);
 
@@ -29,5 +32,5 @@ public interface TransferRequestMapper {
      */
     void updateToCompleted(ExecuteTransferRequest request);
 
-    boolean existsRecentProcessing(InquireTransferRequest request);
+    boolean existsProcessingWithin60Seconds(InquireTransferRequest request);
 }
