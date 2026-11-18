@@ -30,6 +30,7 @@ public enum ResponseCode {
     // 거래고유번호
     DUPLICATE_TRANSACTION_NO("D001"),
     ORIGINAL_TRANSFER_NOT_FOUND("D002"),
+    TRANSFER_IN_PROGRESS("D003"),
 
     SYSTEM_ERROR("9999"),
     ;

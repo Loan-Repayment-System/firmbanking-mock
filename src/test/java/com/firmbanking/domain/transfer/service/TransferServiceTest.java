@@ -4,6 +4,7 @@ import com.firmbanking.domain.transfer.dto.request.ExecuteTransferRequest;
 import com.firmbanking.domain.transfer.dto.response.TransferDetailResponse;
 import com.firmbanking.domain.transfer.dto.response.TransferResultResponse;
 import com.firmbanking.domain.transfer.mapper.TransferMapper;
+import com.firmbanking.domain.transfer.mapper.TransferRequestMapper;
 import com.firmbanking.global.code.ResponseCode;
 import com.firmbanking.global.code.TransferType;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,15 +14,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.InOrder;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.math.BigDecimal;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 
@@ -35,29 +40,170 @@ class TransferServiceTest {
     private static final BigDecimal BALANCE_AFTER = new BigDecimal("9999000000");
 
     private TransferMapper transferMapper;
+    private TransferRequestMapper transferRequestMapper;
     private TransferProcessor transferProcessor;
     private TransferService transferService;
 
     @BeforeEach
     void setUp() {
         transferMapper = mock(TransferMapper.class);
+        transferRequestMapper = mock(TransferRequestMapper.class);
         transferProcessor = mock(TransferProcessor.class);
-        transferService = new TransferService(transferMapper, transferProcessor);
+        transferService = new TransferService(transferMapper, transferRequestMapper, transferProcessor);
     }
 
     @Test
-    @DisplayName("같은 거래고유번호의 이체 결과가 없으면 TransferProcessor의 결과를 돌려준다")
+    @DisplayName("이체 결과와 요청 기록이 없으면 처리 중으로 저장한 뒤 TransferProcessor의 결과를 돌려준다")
     void 저장된_결과가_없으면_처리한다() {
         // given
         givenSaved(null);
+        ExecuteTransferRequest request = request();
         TransferResultResponse processed = success();
-        given(transferProcessor.process(any())).willReturn(processed);
+        given(transferProcessor.process(request)).willReturn(processed);
+        InOrder inOrder = inOrder(transferRequestMapper, transferProcessor);
 
         // when
-        TransferResultResponse result = transferService.transfer(request());
+        TransferResultResponse result = transferService.transfer(request);
 
         // then
         assertThat(result).isSameAs(processed);
+        then(transferRequestMapper).should(inOrder).insertProcessing(request);
+        then(transferProcessor).should(inOrder).process(request);
+    }
+
+    @Nested
+    @DisplayName("같은 거래고유번호의 요청 기록이 이미 있을 때")
+    class ExistingRequest {
+
+        @BeforeEach
+        void setUp() {
+            willThrow(new DuplicateKeyException("uq_transfer_request"))
+                    .given(transferRequestMapper).insertProcessing(any());
+        }
+
+        @Test
+        @DisplayName("60초 지난 처리 중을 오류로 바꾼 뒤 오류를 처리 중으로 바꾼다")
+        void 멈춘_요청을_오류로_바꾼_뒤_다시_시작한다() {
+            // given
+            givenSaved(null);
+            ExecuteTransferRequest request = request();
+            InOrder inOrder = inOrder(transferRequestMapper);
+
+            // when
+            transferService.transfer(request);
+
+            // then
+            then(transferRequestMapper).should(inOrder).updateStaleProcessingToError(request);
+            then(transferRequestMapper).should(inOrder).updateErrorToProcessing(request);
+        }
+
+        @Test
+        @DisplayName("오류를 처리 중으로 1행 바꾸면 다시 처리하고 TransferProcessor의 결과를 돌려준다")
+        void 처리_중으로_바뀌면_다시_처리한다() {
+            // given
+            givenSaved(null);
+            ExecuteTransferRequest request = request();
+            TransferResultResponse processed = success();
+            given(transferRequestMapper.updateErrorToProcessing(request)).willReturn(1);
+            given(transferProcessor.process(request)).willReturn(processed);
+
+            // when
+            TransferResultResponse result = transferService.transfer(request);
+
+            // then
+            assertThat(result).isSameAs(processed);
+        }
+
+        @Nested
+        @DisplayName("오류를 처리 중으로 바꾼 행이 0행일 때")
+        class NotStarted {
+
+            @Test
+            @DisplayName("내용이 같은 이체 결과가 그사이 저장됐으면 0000 / 9,999,000,000을 돌려주고 처리하지 않는다")
+            void 저장된_결과를_돌려준다() {
+                // given
+                givenSavedAfterFirstFind(saved(ResponseCode.SUCCESS, BALANCE_AFTER));
+
+                // when
+                TransferResultResponse result = transferService.transfer(request());
+
+                // then
+                assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
+                assertThat(result.getBalanceAfter()).isEqualByComparingTo(BALANCE_AFTER);
+                then(transferProcessor).should(never()).process(any());
+            }
+
+            @Test
+            @DisplayName("출금금액이 2,000,000으로 다른 이체 결과가 저장됐으면 D001을 돌려주고 처리하지 않는다")
+            void 내용이_다르면_D001이다() {
+                // given
+                givenSavedAfterFirstFind(saved(ResponseCode.SUCCESS, BALANCE_AFTER, new BigDecimal("2000000")));
+
+                // when
+                TransferResultResponse result = transferService.transfer(request());
+
+                // then
+                assertThat(result.getResponseCode()).isEqualTo(ResponseCode.DUPLICATE_TRANSACTION_NO);
+                then(transferProcessor).should(never()).process(any());
+            }
+
+            @Test
+            @DisplayName("이체 결과가 없으면 D003을 돌려주고 처리하지 않는다")
+            void 결과가_없으면_D003이다() {
+                // given
+                givenSaved(null);
+
+                // when
+                TransferResultResponse result = transferService.transfer(request());
+
+                // then
+                assertThat(result.getResponseCode()).isEqualTo(ResponseCode.TRANSFER_IN_PROGRESS);
+                assertThat(result.getBalanceAfter()).isNull();
+                then(transferProcessor).should(never()).process(any());
+            }
+
+            private void givenSavedAfterFirstFind(TransferDetailResponse saved) {
+                given(transferMapper.findByCompanyNoAndSentDateAndMessageNo(COMPANY_NO, SENT_DATE, MESSAGE_NO))
+                        .willReturn(null, saved);
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("TransferProcessor에서 예상 못 한 예외가 날 때")
+    class ProcessFailure {
+
+        private final IllegalStateException failure = new IllegalStateException("처리 실패");
+
+        @BeforeEach
+        void setUp() {
+            givenSaved(null);
+            given(transferProcessor.process(any())).willThrow(failure);
+        }
+
+        @Test
+        @DisplayName("처리 중을 오류로 바꾸고 같은 예외를 던진다")
+        void 오류로_바꾸고_예외를_던진다() {
+            // given
+            ExecuteTransferRequest request = request();
+
+            // when, then
+            assertThatThrownBy(() -> transferService.transfer(request)).isSameAs(failure);
+            then(transferRequestMapper).should().updateProcessingToError(request);
+        }
+
+        @Test
+        @DisplayName("오류 저장도 실패하면 원래 예외를 던지고 오류 저장 예외를 suppressed로 남긴다")
+        void 오류_저장이_실패해도_원래_예외를_던진다() {
+            // given
+            IllegalArgumentException saveFailure = new IllegalArgumentException("오류 저장 실패");
+            given(transferRequestMapper.updateProcessingToError(any())).willThrow(saveFailure);
+
+            // when, then
+            assertThatThrownBy(() -> transferService.transfer(request()))
+                    .isSameAs(failure)
+                    .hasSuppressedException(saveFailure);
+        }
     }
 
     @Nested
@@ -66,7 +212,7 @@ class TransferServiceTest {
 
         // 프로그램 설계 1절: 전송시간은 중복 비교에 쓰지 않는다
         @Test
-        @DisplayName("저장된 결과가 0000 / 잔액 9,999,000,000이고 전송시간만 다르면 0000 / 9,999,000,000을 돌려주고 처리하지 않는다")
+        @DisplayName("저장된 결과가 0000 / 잔액 9,999,000,000이고 전송시간만 다르면 0000 / 9,999,000,000을 돌려주고 요청 기록과 처리를 하지 않는다")
         void 전송시간만_다르면_저장된_결과다() {
             // given
             givenSaved(saved(ResponseCode.SUCCESS, BALANCE_AFTER));
@@ -77,6 +223,7 @@ class TransferServiceTest {
             // then
             assertThat(result.getResponseCode()).isEqualTo(ResponseCode.SUCCESS);
             assertThat(result.getBalanceAfter()).isEqualByComparingTo(BALANCE_AFTER);
+            then(transferRequestMapper).shouldHaveNoInteractions();
             then(transferProcessor).should(never()).process(any());
         }
 
@@ -149,6 +296,21 @@ class TransferServiceTest {
 
             // then
             assertThat(result.getResponseCode()).isEqualTo(ResponseCode.DUPLICATE_TRANSACTION_NO);
+        }
+
+        // 다른 요청이 이체 결과를 저장해 완료한 것이므로 실패가 아니다
+        @Test
+        @DisplayName("요청 기록을 오류로 바꾸지 않는다")
+        void 오류로_바꾸지_않는다() {
+            // given
+            given(transferMapper.findByCompanyNoAndSentDateAndMessageNo(COMPANY_NO, SENT_DATE, MESSAGE_NO))
+                    .willReturn(null, saved(ResponseCode.SUCCESS, BALANCE_AFTER));
+
+            // when
+            transferService.transfer(request());
+
+            // then
+            then(transferRequestMapper).should(never()).updateProcessingToError(any());
         }
     }
 

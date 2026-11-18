@@ -145,6 +145,23 @@ class PaymentControllerTest {
         assertUnwritten(response.complete(responseCode));
     }
 
+    @Test
+    @DisplayName("이체가 D003을 돌려주면 D003이고 출금후잔액부호·출금후잔액·수수료는 요청 그대로다")
+    void 처리_중이면_출금후잔액을_쓰지_않는다() {
+        // given
+        byte[] request = PaymentFixture.request("100-000-000002", 1_000_000, "999", "200-000-000001");
+        given(transferService.transfer(any())).willReturn(
+                TransferResultResponse.builder().responseCode(ResponseCode.TRANSFER_IN_PROGRESS).build());
+
+        // when
+        ResponseTelegram response = ResponseTelegram.copyOf(request);
+        ResponseCode responseCode = controller.process(TelegramConverter.read(request), response);
+
+        // then
+        assertThat(responseCode).isEqualTo(ResponseCode.TRANSFER_IN_PROGRESS);
+        assertUnwritten(response.complete(responseCode));
+    }
+
     private static void assertUnwritten(byte[] bytes) {
         assertThat(read(bytes, PaymentField.BALANCE_SIGN)).isEqualTo(" ");
         assertThat(read(bytes, PaymentField.BALANCE_AFTER)).isEqualTo("0000000000000");

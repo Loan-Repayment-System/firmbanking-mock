@@ -12,6 +12,7 @@ import com.firmbanking.domain.transfer.dto.request.ExecuteTransferRequest;
 import com.firmbanking.domain.transfer.dto.response.TransferResultResponse;
 import com.firmbanking.domain.transfer.mapper.AccountTransactionMapper;
 import com.firmbanking.domain.transfer.mapper.TransferMapper;
+import com.firmbanking.domain.transfer.mapper.TransferRequestMapper;
 import com.firmbanking.global.code.AccountTransactionType;
 import com.firmbanking.global.code.ConsentStatus;
 import com.firmbanking.global.code.ResponseCode;
@@ -25,6 +26,7 @@ import java.math.BigDecimal;
 /**
  * 이체 처리 흐름 3~6단계를 한 트랜잭션으로 처리한다 (프로그램 설계 1절).
  * 거절도 잔액은 바꾸지 않고 이체 결과를 저장한다. 계좌 거래내역은 성공한 이체만 저장한다.
+ * 이체 결과를 저장하면 요청을 완료로 바꾼다.
  * 지급과 집금은 거래별 검사와 응답 잔액만 다르다.
  */
 @Component
@@ -35,6 +37,7 @@ public class TransferProcessor {
     private final AccountTransactionMapper accountTransactionMapper;
     private final CompanyMapper companyMapper;
     private final TransferMapper transferMapper;
+    private final TransferRequestMapper transferRequestMapper;
     private final WithdrawalConsentMapper withdrawalConsentMapper;
 
     @Transactional
@@ -161,6 +164,7 @@ public class TransferProcessor {
                 .withdrawalTransactionId(withdrawalTransactionId)
                 .depositTransactionId(depositTransactionId)
                 .build());
+        transferRequestMapper.updateToCompleted(request);
         return TransferResultResponse.builder()
                 .responseCode(responseCode)
                 .balanceAfter(balanceAfter)

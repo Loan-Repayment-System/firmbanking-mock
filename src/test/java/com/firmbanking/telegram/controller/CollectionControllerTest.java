@@ -145,6 +145,23 @@ class CollectionControllerTest {
         assertUnwritten(response.complete(responseCode));
     }
 
+    @Test
+    @DisplayName("이체가 D003을 돌려주면 D003이고 입금후잔액부호·입금후잔액·수수료는 요청 그대로다")
+    void 처리_중이면_입금후잔액을_쓰지_않는다() {
+        // given
+        byte[] request = CollectionFixture.request("200-000-000001", 1_000_000, "999", "100-000-000001");
+        given(transferService.transfer(any())).willReturn(
+                TransferResultResponse.builder().responseCode(ResponseCode.TRANSFER_IN_PROGRESS).build());
+
+        // when
+        ResponseTelegram response = ResponseTelegram.copyOf(request);
+        ResponseCode responseCode = controller.process(TelegramConverter.read(request), response);
+
+        // then
+        assertThat(responseCode).isEqualTo(ResponseCode.TRANSFER_IN_PROGRESS);
+        assertUnwritten(response.complete(responseCode));
+    }
+
     private static void assertUnwritten(byte[] bytes) {
         assertThat(read(bytes, CollectionField.BALANCE_SIGN)).isEqualTo(" ");
         assertThat(read(bytes, CollectionField.BALANCE_AFTER)).isEqualTo("0000000000000");

@@ -162,6 +162,23 @@ class TransferInquiryControllerTest {
         assertUnwritten(response.complete(responseCode));
     }
 
+    @Test
+    @DisplayName("결과조회가 D003을 돌려주면 D003이고 응답 필드는 요청 그대로다")
+    void 처리_중이면_응답_필드를_쓰지_않는다() {
+        // given
+        byte[] request = TransferInquiryFixture.request("20261029", "000100");
+        given(transferInquiryService.inquire(any())).willReturn(
+                TransferInquiryResponse.builder().responseCode(ResponseCode.TRANSFER_IN_PROGRESS).build());
+
+        // when
+        ResponseTelegram response = ResponseTelegram.copyOf(request);
+        ResponseCode responseCode = controller.process(TelegramConverter.read(request), response);
+
+        // then
+        assertThat(responseCode).isEqualTo(ResponseCode.TRANSFER_IN_PROGRESS);
+        assertUnwritten(response.complete(responseCode));
+    }
+
     private static void assertUnwritten(byte[] bytes) {
         assertThat(read(bytes, TransferInquiryField.WITHDRAWAL_ACCOUNT_NO)).isBlank();
         assertThat(read(bytes, TransferInquiryField.REQUESTED_AMOUNT)).isEqualTo("0000000000000");
