@@ -1,7 +1,9 @@
 package com.firmbanking.global.config.typehandler;
 
+import com.firmbanking.global.code.AccountTransactionType;
 import com.firmbanking.global.code.CodeEnum;
 import com.firmbanking.global.code.ConsentStatus;
+import com.firmbanking.global.code.TransferRequestStatus;
 import com.firmbanking.global.code.TransferType;
 import org.apache.ibatis.type.BaseTypeHandler;
 import org.apache.ibatis.type.JdbcType;
@@ -16,7 +18,7 @@ import java.sql.SQLException;
  * 코드성 테이블 enum ↔ id 컬럼. 코드 enum을 추가하면 @MappedTypes에도 추가한다.
  * MyBatis가 @MappedTypes의 타입마다 이 클래스를 생성자에 타입을 넘겨 만든다.
  */
-@MappedTypes({TransferType.class, ConsentStatus.class})
+@MappedTypes({TransferType.class, ConsentStatus.class, AccountTransactionType.class, TransferRequestStatus.class})
 public class CodeEnumTypeHandler<E extends Enum<E> & CodeEnum> extends BaseTypeHandler<E> {
 
     private final Class<E> type;
