@@ -12,6 +12,7 @@ import com.firmbanking.domain.transfer.dto.request.ExecuteTransferRequest;
 import com.firmbanking.domain.transfer.dto.response.TransferResultResponse;
 import com.firmbanking.domain.transfer.mapper.AccountTransactionMapper;
 import com.firmbanking.domain.transfer.mapper.TransferMapper;
+import com.firmbanking.domain.transfer.mapper.TransferRequestMapper;
 import com.firmbanking.global.code.AccountTransactionType;
 import com.firmbanking.global.code.ConsentStatus;
 import com.firmbanking.global.code.ResponseCode;
@@ -56,6 +57,7 @@ class TransferProcessorTest {
     private AccountTransactionMapper accountTransactionMapper;
     private CompanyMapper companyMapper;
     private TransferMapper transferMapper;
+    private TransferRequestMapper transferRequestMapper;
     private WithdrawalConsentMapper withdrawalConsentMapper;
     private TransferProcessor transferProcessor;
 
@@ -65,9 +67,10 @@ class TransferProcessorTest {
         accountTransactionMapper = mock(AccountTransactionMapper.class);
         companyMapper = mock(CompanyMapper.class);
         transferMapper = mock(TransferMapper.class);
+        transferRequestMapper = mock(TransferRequestMapper.class);
         withdrawalConsentMapper = mock(WithdrawalConsentMapper.class);
         transferProcessor = new TransferProcessor(accountMapper, accountTransactionMapper, companyMapper,
-                transferMapper, withdrawalConsentMapper);
+                transferMapper, transferRequestMapper, withdrawalConsentMapper);
         given(companyMapper.findByCompanyNo(COMPANY_NO)).willReturn(CompanyDetailResponse.builder()
                 .companyNo(COMPANY_NO)
                 .companyName("캐피탈")
@@ -293,6 +296,38 @@ class TransferProcessorTest {
 
             // then
             assertTransaction(captureTransactions().get(0), PAYMENT_ACCOUNT_ID, AccountTransactionType.WITHDRAWAL, "1000000", "0");
+        }
+
+        @Test
+        @DisplayName("지급에 성공하면 이체 결과를 저장한 뒤 요청을 완료로 바꾼다")
+        void 성공하면_요청을_완료로_바꾼다() {
+            // given
+            givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "10000000000");
+            ExecuteTransferRequest request = request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO, "1000000");
+            InOrder inOrder = inOrder(transferMapper, transferRequestMapper);
+
+            // when
+            transferProcessor.process(request);
+
+            // then
+            then(transferMapper).should(inOrder).insert(any());
+            then(transferRequestMapper).should(inOrder).updateToCompleted(request);
+        }
+
+        @Test
+        @DisplayName("잔액 부족으로 거절하면 이체 결과를 저장한 뒤 요청을 완료로 바꾼다")
+        void 거절해도_요청을_완료로_바꾼다() {
+            // given
+            givenAccount(PAYMENT_ACCOUNT_ID, PAYMENT_ACCOUNT_NO, "1000000");
+            ExecuteTransferRequest request = request(PAYMENT_ACCOUNT_NO, CUSTOMER_ACCOUNT_NO, "2000000");
+            InOrder inOrder = inOrder(transferMapper, transferRequestMapper);
+
+            // when
+            transferProcessor.process(request);
+
+            // then
+            then(transferMapper).should(inOrder).insert(any());
+            then(transferRequestMapper).should(inOrder).updateToCompleted(request);
         }
     }
 

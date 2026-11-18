@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.firmbanking.domain.transfer.mapper.TransferRequestMapper">
+
+    <!-- transfer_request_status_id: 1 처리 중, 2 완료, 3 오류 -->
+
+    <sql id="matchesTransactionNo">
+        company_no = #{companyNo}
+        AND sent_date = #{sentDate}
+        AND message_no = #{messageNo}
+    </sql>
+
+    <sql id="sixtySecondsAgo">NOW() - INTERVAL 60 SECOND</sql>
+
+    <insert id="insertProcessing">
+        INSERT INTO transfer_request (company_no, sent_date, message_no, transfer_request_status_id)
+        VALUES (#{companyNo}, #{sentDate}, #{messageNo}, 1)
+    </insert>
+
+    <select id="findStatus" resultType="com.firmbanking.global.code.TransferRequestStatus">
+        SELECT transfer_request_status_id
+        FROM transfer_request
+        WHERE <include refid="matchesTransactionNo"/>
+    </select>
+
+    <update id="updateProcessingOver60SecondsToError">
+        UPDATE transfer_request
+        SET transfer_request_status_id = 3
+        WHERE <include refid="matchesTransactionNo"/>
+          AND transfer_request_status_id = 1
+          AND updated_at &lt; <include refid="sixtySecondsAgo"/>
+    </update>
+
+    <update id="updateErrorToProcessing">
+        UPDATE transfer_request
+        SET transfer_request_status_id = 1
+        WHERE <include refid="matchesTransactionNo"/>
+          AND transfer_request_status_id = 3
+    </update>
+
+    <update id="updateProcessingToError">
+        UPDATE transfer_request
+        SET transfer_request_status_id = 3
+        WHERE <include refid="matchesTransactionNo"/>
+          AND transfer_request_status_id = 1
+    </update>
+
+    <update id="updateToCompleted">
+        UPDATE transfer_request
+        SET transfer_request_status_id = 2
+        WHERE <include refid="matchesTransactionNo"/>
+    </update>
+
+    <select id="existsProcessingWithin60Seconds" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM transfer_request
+            WHERE <include refid="matchesTransactionNo"/>
+              AND transfer_request_status_id = 1
+              AND updated_at &gt;= <include refid="sixtySecondsAgo"/>
+        )
+    </select>
+</mapper>
