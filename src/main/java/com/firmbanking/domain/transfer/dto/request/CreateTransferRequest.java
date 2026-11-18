@@ -26,4 +26,6 @@ public class CreateTransferRequest {
     private String memo;
     private String responseCode;
     private BigDecimal balanceAfter;
+    private Long withdrawalTransactionId;
+    private Long depositTransactionId;
 }

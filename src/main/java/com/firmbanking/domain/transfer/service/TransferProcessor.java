@@ -6,10 +6,13 @@ import com.firmbanking.domain.company.dto.response.CompanyDetailResponse;
 import com.firmbanking.domain.company.mapper.CompanyMapper;
 import com.firmbanking.domain.consent.dto.response.WithdrawalConsentDetailResponse;
 import com.firmbanking.domain.consent.mapper.WithdrawalConsentMapper;
+import com.firmbanking.domain.transfer.dto.request.CreateAccountTransactionRequest;
 import com.firmbanking.domain.transfer.dto.request.CreateTransferRequest;
 import com.firmbanking.domain.transfer.dto.request.ExecuteTransferRequest;
 import com.firmbanking.domain.transfer.dto.response.TransferResultResponse;
+import com.firmbanking.domain.transfer.mapper.AccountTransactionMapper;
 import com.firmbanking.domain.transfer.mapper.TransferMapper;
+import com.firmbanking.global.code.AccountTransactionType;
 import com.firmbanking.global.code.ConsentStatus;
 import com.firmbanking.global.code.ResponseCode;
 import com.firmbanking.global.code.TransferType;
@@ -21,7 +24,7 @@ import java.math.BigDecimal;
 
 /**
  * 이체 처리 흐름 3~6단계를 한 트랜잭션으로 처리한다 (프로그램 설계 1절).
- * 거절도 잔액은 바꾸지 않고 이체 결과를 저장한다.
+ * 거절도 잔액은 바꾸지 않고 이체 결과를 저장한다. 계좌 거래내역은 성공한 이체만 저장한다.
  * 지급과 집금은 거래별 검사와 응답 잔액만 다르다.
  */
 @Component
@@ -29,6 +32,7 @@ import java.math.BigDecimal;
 public class TransferProcessor {
 
     private final AccountMapper accountMapper;
+    private final AccountTransactionMapper accountTransactionMapper;
     private final CompanyMapper companyMapper;
     private final TransferMapper transferMapper;
     private final WithdrawalConsentMapper withdrawalConsentMapper;
@@ -39,10 +43,15 @@ public class TransferProcessor {
         AccountDetailResponse deposit = findDepositAccount(request);
         ResponseCode checked = check(request, withdrawal, deposit);
         if (checked != ResponseCode.SUCCESS) {
-            return save(request, checked, null);
+            return save(request, checked, null, null, null);
         }
-        BigDecimal balanceAfter = moveBalance(request, withdrawal, deposit);
-        return save(request, ResponseCode.SUCCESS, balanceAfter);
+        MovedBalance moved = moveBalance(request, withdrawal, deposit);
+        Long withdrawalTransactionId = saveTransaction(withdrawal.getAccountId(), AccountTransactionType.WITHDRAWAL,
+                request.getAmount(), moved.withdrawalBalance());
+        Long depositTransactionId = saveTransaction(deposit.getAccountId(), AccountTransactionType.DEPOSIT,
+                request.getAmount(), moved.depositBalance());
+        return save(request, ResponseCode.SUCCESS, moved.responseBalance(),
+                withdrawalTransactionId, depositTransactionId);
     }
 
     private AccountDetailResponse findWithdrawalAccount(ExecuteTransferRequest request) {
@@ -78,23 +87,36 @@ public class TransferProcessor {
     }
 
     /**
-     * 출금계좌에서 빼고 입금계좌에 더한 뒤 응답할 잔액을 돌려준다.
-     * 지급은 출금 후 지급 계좌 잔액, 집금은 입금 후 수납 계좌 잔액이다 (전문 명세 4.1·4.2절).
+     * 출금계좌에서 빼고 입금계좌에 더한 뒤 거래별 잔액과 응답할 잔액을 돌려준다.
+     * 응답 잔액은 지급이면 출금 후 지급 계좌 잔액, 집금이면 입금 후 수납 계좌 잔액이다.
      */
-    private BigDecimal moveBalance(ExecuteTransferRequest request, AccountDetailResponse withdrawal,
-                                   AccountDetailResponse deposit) {
+    private MovedBalance moveBalance(ExecuteTransferRequest request, AccountDetailResponse withdrawal,
+                                     AccountDetailResponse deposit) {
+        BigDecimal withdrawalBalance = withdrawal.getBalance().subtract(request.getAmount());
         // 같은 계좌면 잔액이 그대로다. 따로 쓰면 입금이 조회한 잔액으로 출금을 덮어쓴다.
         if (withdrawal.getAccountId().equals(deposit.getAccountId())) {
-            return withdrawal.getBalance();
+            return new MovedBalance(withdrawalBalance, withdrawal.getBalance(), withdrawal.getBalance());
         }
-        BigDecimal withdrawalBalance = withdrawal.getBalance().subtract(request.getAmount());
         BigDecimal depositBalance = deposit.getBalance().add(request.getAmount());
         accountMapper.updateBalance(withdrawal.getAccountId(), withdrawalBalance);
         accountMapper.updateBalance(deposit.getAccountId(), depositBalance);
-        return switch (request.getTransferType()) {
+        BigDecimal responseBalance = switch (request.getTransferType()) {
             case PAYMENT -> withdrawalBalance;
             case COLLECTION -> depositBalance;
         };
+        return new MovedBalance(withdrawalBalance, depositBalance, responseBalance);
+    }
+
+    private Long saveTransaction(Long accountId, AccountTransactionType type, BigDecimal amount,
+                                 BigDecimal balanceAfter) {
+        CreateAccountTransactionRequest transaction = CreateAccountTransactionRequest.builder()
+                .accountId(accountId)
+                .accountTransactionType(type)
+                .amount(amount)
+                .balanceAfter(balanceAfter)
+                .build();
+        accountTransactionMapper.insert(transaction);
+        return transaction.getAccountTransactionId();
     }
 
     /**
@@ -121,7 +143,8 @@ public class TransferProcessor {
     }
 
     private TransferResultResponse save(ExecuteTransferRequest request, ResponseCode responseCode,
-                                        BigDecimal balanceAfter) {
+                                        BigDecimal balanceAfter, Long withdrawalTransactionId,
+                                        Long depositTransactionId) {
         transferMapper.insert(CreateTransferRequest.builder()
                 .companyNo(request.getCompanyNo())
                 .sentDate(request.getSentDate())
@@ -135,10 +158,16 @@ public class TransferProcessor {
                 .memo(request.getMemo())
                 .responseCode(responseCode.getCode())
                 .balanceAfter(balanceAfter)
+                .withdrawalTransactionId(withdrawalTransactionId)
+                .depositTransactionId(depositTransactionId)
                 .build());
         return TransferResultResponse.builder()
                 .responseCode(responseCode)
                 .balanceAfter(balanceAfter)
                 .build();
+    }
+
+    private record MovedBalance(BigDecimal withdrawalBalance, BigDecimal depositBalance,
+                                BigDecimal responseBalance) {
     }
 }

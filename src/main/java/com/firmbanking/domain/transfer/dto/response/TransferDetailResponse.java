@@ -28,5 +28,7 @@ public class TransferDetailResponse {
     private String memo;
     private String responseCode;
     private BigDecimal balanceAfter;
+    private Long withdrawalTransactionId;
+    private Long depositTransactionId;
     private LocalDateTime createdAt;
 }
