@@ -58,22 +58,53 @@ class AccountMapperIntegrationTest {
         }
     }
 
-    @Test
+    @Nested
     @Transactional
-    @DisplayName("잔액 10,000,000인 고객 계좌를 11,000,000으로 updateBalance하면 조회한 잔액이 11,000,000이다")
-    void 잔액을_바꾼다() {
-        // given
-        jdbcTemplate.update("""
-                INSERT INTO account (bank_code, account_no, holder_name, holder_birth_date, balance)
-                VALUES ('999', '200-000-000001', '김철수', '900101', 10000000)
-                """);
-        Long accountId = accountMapper.findByBankCodeAndAccountNo("999", "200-000-000001").getAccountId();
+    @DisplayName("잔액 10,000,000인 고객 계좌가 있을 때")
+    class Customer {
 
-        // when
-        accountMapper.updateBalance(accountId, new BigDecimal("11000000"));
+        @Test
+        @DisplayName("version 0인 계좌를 version 0으로 11,000,000으로 updateBalance하면 1행이 바뀌고 잔액 11,000,000, version 1이다")
+        void version이_같으면_잔액을_바꾸고_version을_올린다() {
+            // given
+            Long accountId = insertCustomer(0L);
 
-        // then
-        assertThat(accountMapper.findByBankCodeAndAccountNo("999", "200-000-000001").getBalance())
-                .isEqualByComparingTo(new BigDecimal("11000000"));
+            // when
+            int updated = accountMapper.updateBalance(accountId, new BigDecimal("11000000"), 0L);
+
+            // then
+            AccountDetailResponse account = findCustomer();
+            assertThat(updated).isEqualTo(1);
+            assertThat(account.getBalance()).isEqualByComparingTo(new BigDecimal("11000000"));
+            assertThat(account.getVersion()).isEqualTo(1L);
+        }
+
+        @Test
+        @DisplayName("version 1인 계좌를 version 0으로 11,000,000으로 updateBalance하면 0행이 바뀌고 잔액 10,000,000, version 1 그대로다")
+        void version이_다르면_바꾸지_않는다() {
+            // given
+            Long accountId = insertCustomer(1L);
+
+            // when
+            int updated = accountMapper.updateBalance(accountId, new BigDecimal("11000000"), 0L);
+
+            // then
+            AccountDetailResponse account = findCustomer();
+            assertThat(updated).isZero();
+            assertThat(account.getBalance()).isEqualByComparingTo(new BigDecimal("10000000"));
+            assertThat(account.getVersion()).isEqualTo(1L);
+        }
+
+        private Long insertCustomer(Long version) {
+            jdbcTemplate.update("""
+                    INSERT INTO account (bank_code, account_no, holder_name, holder_birth_date, balance, version)
+                    VALUES ('999', '200-000-000001', '김철수', '900101', 10000000, ?)
+                    """, version);
+            return findCustomer().getAccountId();
+        }
+
+        private AccountDetailResponse findCustomer() {
+            return accountMapper.findByBankCodeAndAccountNo("999", "200-000-000001");
+        }
     }
 }

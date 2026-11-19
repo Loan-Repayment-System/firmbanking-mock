@@ -17,6 +17,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InOrder;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 
 import java.math.BigDecimal;
 import java.util.stream.Stream;
@@ -30,6 +31,7 @@ import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 @DisplayName("TransferService")
 class TransferServiceTest {
@@ -224,6 +226,52 @@ class TransferServiceTest {
                 assertThat(result.getResponseCode()).isEqualTo(ResponseCode.TRANSFER_IN_PROGRESS);
                 then(transferProcessor).should(never()).process(any());
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("처리 중 잔액 변경이 충돌할 때")
+    class Conflict {
+
+        @BeforeEach
+        void setUp() {
+            givenSaved(null);
+        }
+
+        @Test
+        @DisplayName("두 번 충돌하고 세 번째에 0000이면 0000을 돌려주고 TransferProcessor를 3번 호출하며 요청을 오류로 바꾸지 않는다")
+        void 충돌하면_다시_처리한다() {
+            // given
+            TransferResultResponse processed = success();
+            given(transferProcessor.process(any()))
+                    .willThrow(conflict(), conflict())
+                    .willReturn(processed);
+
+            // when
+            TransferResultResponse result = transferService.transfer(request());
+
+            // then
+            assertThat(result).isSameAs(processed);
+            then(transferProcessor).should(times(3)).process(any());
+            then(transferRequestMapper).should(never()).updateProcessingToError(any());
+        }
+
+        @Test
+        @DisplayName("매번 충돌하면 TransferProcessor를 50번 호출한 뒤 요청을 오류로 바꾸고 OptimisticLockingFailureException을 던진다")
+        void 최대_횟수까지_충돌하면_오류로_바꾸고_예외를_던진다() {
+            // given
+            ExecuteTransferRequest request = request();
+            given(transferProcessor.process(any())).willThrow(conflict());
+
+            // when, then
+            assertThatThrownBy(() -> transferService.transfer(request))
+                    .isInstanceOf(OptimisticLockingFailureException.class);
+            then(transferProcessor).should(times(TransferService.MAX_ATTEMPTS)).process(any());
+            then(transferRequestMapper).should().updateProcessingToError(request);
+        }
+
+        private static OptimisticLockingFailureException conflict() {
+            return new OptimisticLockingFailureException("version");
         }
     }
 
