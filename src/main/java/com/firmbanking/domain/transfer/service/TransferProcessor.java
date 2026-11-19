@@ -28,6 +28,7 @@ import java.math.BigDecimal;
  * 거절도 잔액은 바꾸지 않고 이체 결과를 저장한다. 계좌 거래내역은 성공한 이체만 저장한다.
  * 이체 결과를 저장하면 요청을 완료로 바꾼다.
  * 지급과 집금은 거래별 검사와 응답 잔액만 다르다.
+ * 출금계좌 → 입금계좌 순서로 FOR UPDATE 조회해 잠그고, 커밋까지 같은 계좌의 다른 이체를 기다리게 한다.
  */
 @Component
 @RequiredArgsConstructor
@@ -58,12 +59,12 @@ public class TransferProcessor {
     }
 
     private AccountDetailResponse findWithdrawalAccount(ExecuteTransferRequest request) {
-        return accountMapper.findByBankCodeAndAccountNo(
+        return accountMapper.findByBankCodeAndAccountNoForUpdate(
                 request.getWithdrawalBankCode(), request.getWithdrawalAccountNo());
     }
 
     private AccountDetailResponse findDepositAccount(ExecuteTransferRequest request) {
-        return accountMapper.findByBankCodeAndAccountNo(
+        return accountMapper.findByBankCodeAndAccountNoForUpdate(
                 request.getDepositBankCode(), request.getDepositAccountNo());
     }
 
