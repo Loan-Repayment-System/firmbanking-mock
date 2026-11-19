@@ -13,6 +13,7 @@ export function scenarioThresholds(names) {
     thresholds[`tcp_socket_connecting{scenario:${name}}`] = ['max>=0'];
   }
   thresholds.transfer_success = ['count>=0'];
+  thresholds.transfer_system_error = ['count>=0'];
   thresholds.telegram_requests = ['count>=0'];
   return thresholds;
 }
@@ -36,16 +37,20 @@ export function summarize(data, seconds) {
     };
   }
   const transferSuccess = value(data, 'transfer_success', 'count');
+  const transferSystemError = value(data, 'transfer_system_error', 'count');
   const totalRequests = value(data, 'telegram_requests', 'count');
   const iterations = value(data, 'iterations', 'count');
 
   const dir = __ENV.RESULT_DIR;
   const run = __ENV.RUN;
   return {
-    [`${dir}/${run}-summary.json`]: JSON.stringify({ run, scenarios, transferSuccess, totalRequests, iterations }, null, 2),
-    // run.sh가 정확성 검사에 넘긴다. 워밍업 성공도 DB에 남으므로 포함한다.
+    [`${dir}/${run}-summary.json`]: JSON.stringify(
+      { run, scenarios, transferSuccess, transferSystemError, totalRequests, iterations }, null, 2),
+    // run.sh가 정확성 검사에 넘긴다. 워밍업 응답도 DB에 남으므로 포함한다.
     [`${dir}/${run}-transfer-success.txt`]: `${transferSuccess}\n`,
-    stdout: table(scenarios) + `transfer_success=${transferSuccess}\n`,
+    [`${dir}/${run}-transfer-system-error.txt`]: `${transferSystemError}\n`,
+    stdout: table(scenarios)
+      + `transfer_success=${transferSuccess}\ntransfer_system_error=${transferSystemError}\n`,
   };
 }
 
