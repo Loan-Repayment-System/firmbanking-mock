@@ -9,6 +9,6 @@ usermod -aG docker ec2-user
 git clone https://github.com/Loan-Repayment-System/firmbanking-mock.git /opt/firmbanking-mock
 cd /opt/firmbanking-mock
 for method in synchronized-lock optimistic-lock pessimistic-lock conditional-update named-lock; do
-  git checkout "fix/transfer-$method"
+  git checkout "fix/transfer-$method-v2"
   docker build -t "firmbanking-mock:$method" .
 done

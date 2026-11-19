@@ -5,7 +5,7 @@
 #   APP_SSH=ec2-user@10.0.1.10 DB_SSH=ec2-user@10.0.1.20 \
 #   MYSQL_ROOT_PASSWORD=... MYSQL_PASSWORD=... ./load-test/account-concurrency/run.sh [실행...]
 #
-# 실행: collection(일괄 집금), payment-baseline(집금 없이 지급·성명조회), payment-main(일괄 집금 중 지급·성명조회).
+# 실행: collection(일괄 집금), payment-baseline(집금 없이 지급), payment-main(일괄 집금 중 지급).
 # 생략하면 세 개를 이 순서로 한다. 실행마다 DB를 새로 만들고 앱을 다시 띄운다.
 # APP_SSH·DB_SSH를 비우면 그 서버 명령을 이 PC에서 실행한다.
 # 앱 이미지 firmbanking-mock:{METHOD}는 앱 서버에 미리 빌드해 둔다.
@@ -143,10 +143,12 @@ run_k6() {
 
 verify() {
   local run="$1"
-  local success
+  local success system_error
   success="$(cat "$RESULT_DIR/$run-transfer-success.txt")"
+  system_error="$(cat "$RESULT_DIR/$run-transfer-system-error.txt")"
   log "정확성 검사"
-  { echo "SET @k6_transfer_success = $success;"; cat "$LOAD_DIR/sql/verify.sql"; } \
+  { echo "SET @k6_transfer_success = $success;"; echo "SET @k6_transfer_system_error = $system_error;"
+    cat "$LOAD_DIR/sql/verify.sql"; } \
     | mysql_client --table | tee "$RESULT_DIR/$run-verify.txt"
 }
 

@@ -12,14 +12,17 @@ export const BANK_CODE = '999';
 export const COLLECTION_ACCOUNT_NO = '100-000-000001';
 export const PAYMENT_ACCOUNT_NO = '100-000-000002';
 export const SUCCESS = '0000';
+export const SYSTEM_ERROR = '9999';
 
 // 연결 시작부터 응답 304바이트를 다 받을 때까지.
 export const telegramDuration = new Trend('telegram_duration', true);
 export const telegramRequests = new Counter('telegram_requests');
 // 응답코드가 0000이 아니거나 응답을 받지 못한 비율.
 export const telegramFailed = new Rate('telegram_failed');
-// 정확성 검사에서 성공한 이체 결과 행 수와 비교한다. 성명조회는 이체 결과를 남기지 않아 세지 않는다.
+// 정확성 검사에서 성공한 이체 결과 행 수와 비교한다.
 export const transferSuccess = new Counter('transfer_success');
+// 정확성 검사에서 처리 중·오류로 남은 이체 요청 기록 수와 비교한다.
+export const transferSystemError = new Counter('transfer_system_error');
 
 // 공통부·개별부 필드 위치는 src/main/java/com/firmbanking/telegram/codec/CommonField와 controller/field/와 같다.
 const Common = {
@@ -43,13 +46,6 @@ const Transfer = {
 const PAYMENT_MEMO = { offset: 199, length: 14 };
 const COLLECTION_MEMO = { offset: 183, length: 14 };
 
-const NameInquiry = {
-  ACCOUNT_NO: { offset: 100, length: 15 },
-  REAL_NAME_NO: { offset: 115, length: 13 },
-  BANK_CODE: { offset: 140, length: 3 },
-  AMOUNT: { offset: 143, length: 13 },
-};
-
 const MEMO = 'LOADTEST';
 
 export function collection(messageNo, withdrawalAccountNo, amount) {
@@ -58,15 +54,6 @@ export function collection(messageNo, withdrawalAccountNo, amount) {
 
 export function payment(messageNo, depositAccountNo, amount) {
   return transferBody('100', messageNo, PAYMENT_ACCOUNT_NO, depositAccountNo, amount, PAYMENT_MEMO);
-}
-
-export function nameInquiry(messageNo, accountNo, realNameNo) {
-  const body = commonPart('6000', '100', messageNo);
-  put(body, NameInquiry.ACCOUNT_NO, accountNo);
-  put(body, NameInquiry.REAL_NAME_NO, realNameNo);
-  put(body, NameInquiry.BANK_CODE, BANK_CODE);
-  put(body, NameInquiry.AMOUNT, number(0, NameInquiry.AMOUNT.length));
-  return body;
 }
 
 function transferBody(businessTypeCode, messageNo, withdrawalAccountNo, depositAccountNo, amount, memoField) {
@@ -167,5 +154,8 @@ export async function send(host, port, body, transaction, isTransfer) {
   }
   if (isTransfer && code === SUCCESS) {
     transferSuccess.add(1, tags);
+  }
+  if (isTransfer && code === SYSTEM_ERROR) {
+    transferSystemError.add(1, tags);
   }
 }
