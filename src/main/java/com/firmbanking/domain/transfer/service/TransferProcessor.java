@@ -49,6 +49,9 @@ public class TransferProcessor {
             return save(request, checked, null, null, null);
         }
         MovedBalance moved = moveBalance(request, withdrawal, deposit);
+        if (moved == null) {
+            return save(request, ResponseCode.INSUFFICIENT_BALANCE, null, null, null);
+        }
         Long withdrawalTransactionId = saveTransaction(withdrawal.getAccountId(), AccountTransactionType.WITHDRAWAL,
                 request.getAmount(), moved.withdrawalBalance());
         Long depositTransactionId = saveTransaction(deposit.getAccountId(), AccountTransactionType.DEPOSIT,
@@ -68,8 +71,8 @@ public class TransferProcessor {
     }
 
     /**
-     * 계좌 존재(B001·B002) → 거래별 검사(B004·C001) → 잔액(B003) 순서로 검사한다.
-     * 통과하면 SUCCESS다.
+     * 계좌 존재(B001·B002) → 거래별 검사(B004·C001) 순서로 검사한다.
+     * 통과하면 SUCCESS다. 잔액(B003)은 출금 UPDATE가 판단한다.
      */
     private ResponseCode check(ExecuteTransferRequest request, AccountDetailResponse withdrawal,
                                AccountDetailResponse deposit) {
@@ -79,32 +82,27 @@ public class TransferProcessor {
         if (deposit == null) {
             return ResponseCode.DEPOSIT_ACCOUNT_NOT_FOUND;
         }
-        ResponseCode checked = checkTransferType(request, withdrawal, deposit);
-        if (checked != ResponseCode.SUCCESS) {
-            return checked;
-        }
-        if (withdrawal.getBalance().compareTo(request.getAmount()) < 0) {
-            return ResponseCode.INSUFFICIENT_BALANCE;
-        }
-        return ResponseCode.SUCCESS;
+        return checkTransferType(request, withdrawal, deposit);
     }
 
     /**
      * 출금계좌에서 빼고 입금계좌에 더한 뒤 거래별 잔액과 응답할 잔액을 돌려준다.
+     * 잔액은 조회한 값이 아니라 UPDATE 시점의 잔액으로 계산한다. 출금계좌 잔액이 금액보다 적으면 null이다.
+     * 거래별 잔액은 UPDATE마다 다시 조회한다. 이 트랜잭션이 UPDATE한 행이라 바꾼 잔액이 나온다.
      * 응답 잔액은 지급이면 출금 후 지급 계좌 잔액, 집금이면 입금 후 수납 계좌 잔액이다.
      */
     private MovedBalance moveBalance(ExecuteTransferRequest request, AccountDetailResponse withdrawal,
                                      AccountDetailResponse deposit) {
-        BigDecimal withdrawalBalance = withdrawal.getBalance().subtract(request.getAmount());
-        // 같은 계좌면 잔액이 그대로다. 따로 쓰면 입금이 조회한 잔액으로 출금을 덮어쓴다.
-        if (withdrawal.getAccountId().equals(deposit.getAccountId())) {
-            return new MovedBalance(withdrawalBalance, withdrawal.getBalance(), withdrawal.getBalance());
+        if (accountMapper.updateWithdrawal(withdrawal.getAccountId(), request.getAmount()) == 0) {
+            return null;
         }
-        BigDecimal depositBalance = deposit.getBalance().add(request.getAmount());
-        accountMapper.updateBalance(withdrawal.getAccountId(), withdrawalBalance);
-        accountMapper.updateBalance(deposit.getAccountId(), depositBalance);
+        BigDecimal withdrawalBalance = findWithdrawalAccount(request).getBalance();
+        accountMapper.updateDeposit(deposit.getAccountId(), request.getAmount());
+        BigDecimal depositBalance = findDepositAccount(request).getBalance();
+        // 같은 계좌면 입금 UPDATE까지 반영된 잔액이 지급 계좌의 최종 잔액이다.
+        boolean sameAccount = withdrawal.getAccountId().equals(deposit.getAccountId());
         BigDecimal responseBalance = switch (request.getTransferType()) {
-            case PAYMENT -> withdrawalBalance;
+            case PAYMENT -> sameAccount ? depositBalance : withdrawalBalance;
             case COLLECTION -> depositBalance;
         };
         return new MovedBalance(withdrawalBalance, depositBalance, responseBalance);

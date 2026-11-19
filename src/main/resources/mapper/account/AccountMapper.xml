@@ -14,9 +14,16 @@
           AND account_no = #{accountNo}
     </select>
 
-    <update id="updateBalance">
+    <update id="updateWithdrawal">
         UPDATE account
-        SET balance = #{balance}
+        SET balance = balance - #{amount}
+        WHERE account_id = #{accountId}
+          AND balance >= #{amount}
+    </update>
+
+    <update id="updateDeposit">
+        UPDATE account
+        SET balance = balance + #{amount}
         WHERE account_id = #{accountId}
     </update>
 </mapper>
