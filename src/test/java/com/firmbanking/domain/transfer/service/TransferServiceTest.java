@@ -16,9 +16,11 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InOrder;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.math.BigDecimal;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,6 +45,7 @@ class TransferServiceTest {
     private TransferMapper transferMapper;
     private TransferRequestMapper transferRequestMapper;
     private TransferProcessor transferProcessor;
+    private AccountLock accountLock;
     private TransferService transferService;
 
     @BeforeEach
@@ -50,7 +53,9 @@ class TransferServiceTest {
         transferMapper = mock(TransferMapper.class);
         transferRequestMapper = mock(TransferRequestMapper.class);
         transferProcessor = mock(TransferProcessor.class);
-        transferService = new TransferService(transferMapper, transferRequestMapper, transferProcessor);
+        accountLock = mock(AccountLock.class);
+        given(accountLock.execute(any(), any())).willAnswer(invocation -> invocation.<Supplier<?>>getArgument(1).get());
+        transferService = new TransferService(transferMapper, transferRequestMapper, transferProcessor, accountLock);
     }
 
     @Test
@@ -224,6 +229,26 @@ class TransferServiceTest {
                 assertThat(result.getResponseCode()).isEqualTo(ResponseCode.TRANSFER_IN_PROGRESS);
                 then(transferProcessor).should(never()).process(any());
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("계좌 잠금을 얻지 못할 때")
+    class LockTimeout {
+
+        @Test
+        @DisplayName("AccountLock이 CannotAcquireLockException을 던지면 같은 예외를 던지고 요청을 오류로 바꾸며 TransferProcessor를 호출하지 않는다")
+        void 오류로_바꾸고_예외를_던진다() {
+            // given
+            givenSaved(null);
+            ExecuteTransferRequest request = request();
+            CannotAcquireLockException timeout = new CannotAcquireLockException("계좌 잠금 시간 초과");
+            willThrow(timeout).given(accountLock).execute(any(), any());
+
+            // when, then
+            assertThatThrownBy(() -> transferService.transfer(request)).isSameAs(timeout);
+            then(transferRequestMapper).should().updateProcessingToError(request);
+            then(transferProcessor).should(never()).process(any());
         }
     }
 
