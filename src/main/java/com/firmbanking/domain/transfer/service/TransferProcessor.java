@@ -28,7 +28,8 @@ import java.math.BigDecimal;
  * 거절도 잔액은 바꾸지 않고 이체 결과를 저장한다. 계좌 거래내역은 성공한 이체만 저장한다.
  * 이체 결과를 저장하면 요청을 완료로 바꾼다.
  * 지급과 집금은 거래별 검사와 응답 잔액만 다르다.
- * 출금계좌 → 입금계좌 순서로 FOR UPDATE 조회해 잠그고, 커밋까지 같은 계좌의 다른 이체를 기다리게 한다.
+ * 두 계좌를 FOR UPDATE 조회해 잠그고, 커밋까지 같은 계좌의 다른 이체를 기다리게 한다.
+ * 이체 방향과 관계없이 (은행코드, 계좌번호)가 작은 계좌부터 잠가, 반대 방향 이체끼리 데드락이 생기지 않게 한다.
  */
 @Component
 @RequiredArgsConstructor
@@ -43,8 +44,9 @@ public class TransferProcessor {
 
     @Transactional
     public TransferResultResponse process(ExecuteTransferRequest request) {
-        AccountDetailResponse withdrawal = findWithdrawalAccount(request);
-        AccountDetailResponse deposit = findDepositAccount(request);
+        LockedAccounts accounts = lockAccounts(request);
+        AccountDetailResponse withdrawal = accounts.withdrawal();
+        AccountDetailResponse deposit = accounts.deposit();
         ResponseCode checked = check(request, withdrawal, deposit);
         if (checked != ResponseCode.SUCCESS) {
             return save(request, checked, null, null, null);
@@ -56,6 +58,26 @@ public class TransferProcessor {
                 request.getAmount(), moved.depositBalance());
         return save(request, ResponseCode.SUCCESS, moved.responseBalance(),
                 withdrawalTransactionId, depositTransactionId);
+    }
+
+    private LockedAccounts lockAccounts(ExecuteTransferRequest request) {
+        if (locksWithdrawalFirst(request)) {
+            AccountDetailResponse withdrawal = findWithdrawalAccount(request);
+            return new LockedAccounts(withdrawal, findDepositAccount(request));
+        }
+        AccountDetailResponse deposit = findDepositAccount(request);
+        return new LockedAccounts(findWithdrawalAccount(request), deposit);
+    }
+
+    /**
+     * 은행코드를 먼저 비교하고, 같으면 계좌번호를 비교한다. 같은 계좌면 출금계좌부터다.
+     */
+    private static boolean locksWithdrawalFirst(ExecuteTransferRequest request) {
+        int byBankCode = request.getWithdrawalBankCode().compareTo(request.getDepositBankCode());
+        if (byBankCode != 0) {
+            return byBankCode < 0;
+        }
+        return request.getWithdrawalAccountNo().compareTo(request.getDepositAccountNo()) <= 0;
     }
 
     private AccountDetailResponse findWithdrawalAccount(ExecuteTransferRequest request) {
@@ -170,6 +192,9 @@ public class TransferProcessor {
                 .responseCode(responseCode)
                 .balanceAfter(balanceAfter)
                 .build();
+    }
+
+    private record LockedAccounts(AccountDetailResponse withdrawal, AccountDetailResponse deposit) {
     }
 
     private record MovedBalance(BigDecimal withdrawalBalance, BigDecimal depositBalance,

@@ -6,6 +6,7 @@ import com.firmbanking.domain.transfer.dto.request.ExecuteTransferRequest;
 import com.firmbanking.domain.transfer.dto.response.TransferResultResponse;
 import com.firmbanking.global.code.AccountTransactionType;
 import com.firmbanking.global.code.ResponseCode;
+import com.firmbanking.global.code.TransferRequestStatus;
 import com.firmbanking.global.code.TransferType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -68,14 +69,43 @@ class TransferConcurrencyIntegrationTest {
         assertThat(findBalance(CUSTOMER_ACCOUNT_NO)).isEqualByComparingTo("1000000");
     }
 
+    // 잠금 순서가 이체 방향을 따르면 두 요청이 서로의 잠금을 기다려 데드락이 생긴다
+    @Test
+    @DisplayName("지급 100건과 입금 계좌를 지급 계좌로 적은 집금 100건을 동시에 보내면 200건 모두 예외 없이 응답하고 지급 100건은 성공, 집금 100건은 B004로 거절된다")
+    void 반대_방향_이체를_동시에_보내도_데드락이_생기지_않는다() throws Exception {
+        // given
+        int requestCount = 100;
+        BigDecimal amount = new BigDecimal("10000");
+        List<ExecuteTransferRequest> requests = new ArrayList<>();
+        for (int i = 1; i <= requestCount; i++) {
+            requests.add(paymentRequest(String.format("%06d", i), amount));
+            requests.add(reversedCollectionRequest(String.format("%06d", requestCount + i), amount));
+        }
+
+        // when
+        List<TransferResultResponse> results = transferConcurrently(requests);
+
+        // then
+        assertThat(results).hasSize(requestCount * 2);
+        assertThat(countResponses(results, ResponseCode.SUCCESS)).isEqualTo(requestCount);
+        assertThat(countResponses(results, ResponseCode.NOT_COMPANY_ACCOUNT)).isEqualTo(requestCount);
+        assertThat(countErrorRequests()).isZero();
+        assertThat(findBalance(PAYMENT_ACCOUNT_NO)).isEqualByComparingTo("99000000");
+        assertThat(findBalance(CUSTOMER_ACCOUNT_NO)).isEqualByComparingTo("1000000");
+    }
+
     private BigDecimal findBalance(String accountNo) {
         return accountMapper.findByBankCodeAndAccountNo(BANK_CODE, accountNo).getBalance();
     }
 
     private static int countSuccessResponses(List<TransferResultResponse> results) {
+        return countResponses(results, ResponseCode.SUCCESS);
+    }
+
+    private static int countResponses(List<TransferResultResponse> results, ResponseCode responseCode) {
         int count = 0;
         for (TransferResultResponse result : results) {
-            if (result.getResponseCode() == ResponseCode.SUCCESS) {
+            if (result.getResponseCode() == responseCode) {
                 count++;
             }
         }
@@ -83,11 +113,18 @@ class TransferConcurrencyIntegrationTest {
     }
 
     private List<TransferResultResponse> transferConcurrently(int requestCount, BigDecimal amount) throws Exception {
+        List<ExecuteTransferRequest> requests = new ArrayList<>();
+        for (int i = 1; i <= requestCount; i++) {
+            requests.add(paymentRequest(String.format("%06d", i), amount));
+        }
+        return transferConcurrently(requests);
+    }
+
+    private List<TransferResultResponse> transferConcurrently(List<ExecuteTransferRequest> requests) throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(THREAD_COUNT);
         CountDownLatch start = new CountDownLatch(1);
         List<Future<TransferResultResponse>> futures = new ArrayList<>();
-        for (int i = 1; i <= requestCount; i++) {
-            ExecuteTransferRequest request = paymentRequest(String.format("%06d", i), amount);
+        for (ExecuteTransferRequest request : requests) {
             futures.add(executor.submit(() -> {
                 start.await();
                 return transferService.transfer(request);
@@ -116,6 +153,29 @@ class TransferConcurrencyIntegrationTest {
                 .amount(amount)
                 .memo("동시성")
                 .build();
+    }
+
+    // 입금 계좌가 수납 계좌가 아니라 B004로 거절될 집금. 거절 전에 고객 계좌 → 지급 계좌 순서로 잠근다.
+    private static ExecuteTransferRequest reversedCollectionRequest(String messageNo, BigDecimal amount) {
+        return ExecuteTransferRequest.builder()
+                .companyNo(COMPANY_NO)
+                .sentDate("20261119")
+                .messageNo(messageNo)
+                .sentTime("120000")
+                .transferType(TransferType.COLLECTION)
+                .withdrawalBankCode(BANK_CODE)
+                .withdrawalAccountNo(CUSTOMER_ACCOUNT_NO)
+                .depositBankCode(BANK_CODE)
+                .depositAccountNo(PAYMENT_ACCOUNT_NO)
+                .amount(amount)
+                .memo("동시성")
+                .build();
+    }
+
+    private int countErrorRequests() {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM transfer_request WHERE company_no = ? AND transfer_request_status_id = ?",
+                Integer.class, COMPANY_NO, TransferRequestStatus.ERROR.getId());
     }
 
     private int countSuccessTransfers() {
