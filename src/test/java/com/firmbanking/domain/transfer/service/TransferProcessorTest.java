@@ -540,6 +540,65 @@ class TransferProcessorTest {
         }
     }
 
+    // 모든 이체가 같은 순서로 잠가야 반대 방향 이체끼리 서로의 잠금을 기다리지 않는다
+    @Nested
+    @DisplayName("두 계좌를 잠글 때")
+    class LockOrder {
+
+        @Test
+        @DisplayName("출금계좌 999 / 100-000-000001이 입금계좌 999 / 200-000-000001보다 작으면 출금계좌 → 입금계좌 순서로 FOR UPDATE 조회한다")
+        void 출금계좌가_작으면_출금계좌부터_잠근다() {
+            // when
+            transferProcessor.process(request(BANK_CODE, "100-000-000001", BANK_CODE, "200-000-000001"));
+
+            // then
+            InOrder inOrder = inOrder(accountMapper);
+            then(accountMapper).should(inOrder).findByBankCodeAndAccountNoForUpdate(BANK_CODE, "100-000-000001");
+            then(accountMapper).should(inOrder).findByBankCodeAndAccountNoForUpdate(BANK_CODE, "200-000-000001");
+        }
+
+        @Test
+        @DisplayName("입금계좌 999 / 100-000-000001이 출금계좌 999 / 200-000-000001보다 작으면 입금계좌 → 출금계좌 순서로 FOR UPDATE 조회한다")
+        void 입금계좌가_작으면_입금계좌부터_잠근다() {
+            // when
+            transferProcessor.process(request(BANK_CODE, "200-000-000001", BANK_CODE, "100-000-000001"));
+
+            // then
+            InOrder inOrder = inOrder(accountMapper);
+            then(accountMapper).should(inOrder).findByBankCodeAndAccountNoForUpdate(BANK_CODE, "100-000-000001");
+            then(accountMapper).should(inOrder).findByBankCodeAndAccountNoForUpdate(BANK_CODE, "200-000-000001");
+        }
+
+        @Test
+        @DisplayName("출금계좌 004 / 900-000-000001, 입금계좌 088 / 100-000-000001이면 은행코드가 작은 출금계좌 → 입금계좌 순서로 FOR UPDATE 조회한다")
+        void 은행코드를_계좌번호보다_먼저_비교한다() {
+            // when
+            transferProcessor.process(request("004", "900-000-000001", "088", "100-000-000001"));
+
+            // then
+            InOrder inOrder = inOrder(accountMapper);
+            then(accountMapper).should(inOrder).findByBankCodeAndAccountNoForUpdate("004", "900-000-000001");
+            then(accountMapper).should(inOrder).findByBankCodeAndAccountNoForUpdate("088", "100-000-000001");
+        }
+
+        private static ExecuteTransferRequest request(String withdrawalBankCode, String withdrawalAccountNo,
+                                                      String depositBankCode, String depositAccountNo) {
+            return ExecuteTransferRequest.builder()
+                    .companyNo(COMPANY_NO)
+                    .sentDate("20261029")
+                    .messageNo("000123")
+                    .sentTime("143005")
+                    .transferType(TransferType.PAYMENT)
+                    .withdrawalBankCode(withdrawalBankCode)
+                    .withdrawalAccountNo(withdrawalAccountNo)
+                    .depositBankCode(depositBankCode)
+                    .depositAccountNo(depositAccountNo)
+                    .amount(new BigDecimal("1000000"))
+                    .memo("대출금")
+                    .build();
+        }
+    }
+
     private void givenAccount(Long accountId, String accountNo, String balance) {
         given(accountMapper.findByBankCodeAndAccountNoForUpdate(BANK_CODE, accountNo)).willReturn(AccountDetailResponse.builder()
                 .accountId(accountId)
