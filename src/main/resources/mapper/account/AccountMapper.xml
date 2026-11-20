@@ -14,6 +14,19 @@
           AND account_no = #{accountNo}
     </select>
 
+    <select id="findByBankCodeAndAccountNoForUpdate" resultType="com.firmbanking.domain.account.dto.response.AccountDetailResponse">
+        SELECT account_id,
+               bank_code,
+               account_no,
+               holder_name,
+               holder_birth_date,
+               balance
+        FROM account
+        WHERE bank_code = #{bankCode}
+          AND account_no = #{accountNo}
+        FOR UPDATE
+    </select>
+
     <update id="updateBalance">
         UPDATE account
         SET balance = #{balance}
